@@ -158,7 +158,6 @@ Merge model definitions into the user's config file (`~/.config/opencode/opencod
 if command -v jq &> /dev/null; then
     jq '.provider.google.models = {
       "gemini-3-pro-low": {"name": "Gemini 3 Pro Low (Antigravity)", "limit": {"context": 1048576, "output": 65535}, "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}},
-      "gemini-3-pro-medium": {"name": "Gemini 3 Pro Medium (Antigravity)", "limit": {"context": 1048576, "output": 65535}, "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}},
       "gemini-3-pro-high": {"name": "Gemini 3 Pro High (Antigravity)", "limit": {"context": 1048576, "output": 65535}, "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}},
       "gemini-3-flash": {"name": "Gemini 3 Flash (Antigravity)", "limit": {"context": 1048576, "output": 65536}, "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}},
       "claude-sonnet-4-5": {"name": "Claude Sonnet 4.5 (Antigravity)", "limit": {"context": 200000, "output": 64000}, "modalities": {"input": ["text", "image", "pdf"], "output": ["text"]}},
@@ -299,7 +298,6 @@ Add these models to your `~/.config/opencode/opencode.json` under `provider.goog
 | Model ID | Description | Thinking |
 |----------|-------------|----------|
 | `gemini-3-pro-low` | Gemini 3 Pro (low thinking) | thinkingLevel: "low" |
-| `gemini-3-pro-medium` | Gemini 3 Pro (medium thinking) | thinkingLevel: "medium" |
 | `gemini-3-pro-high` | Gemini 3 Pro (high thinking) | thinkingLevel: "high" |
 | `gemini-3-flash` | Gemini 3 Flash | Default |
 
@@ -333,11 +331,6 @@ Add these models to your `~/.config/opencode/opencode.json` under `provider.goog
       "models": {
         "gemini-3-pro-low": {
           "name": "Gemini 3 Pro Low (Antigravity)",
-          "limit": { "context": 1048576, "output": 65535 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "gemini-3-pro-medium": {
-          "name": "Gemini 3 Pro Medium (Antigravity)",
           "limit": { "context": 1048576, "output": 65535 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
         },

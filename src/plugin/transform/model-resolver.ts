@@ -32,12 +32,6 @@ export const GEMINI_3_THINKING_LEVELS = ["low", "medium", "high"] as const;
  * - Claude non-thinking: claude-{model} (no -thinking suffix)
  */
 export const MODEL_ALIASES: Record<string, string> = {
-  // Gemini 3 Pro variants (tier suffix stripped, thinkingLevel set)
-  "gemini-3-pro-low": "gemini-3-pro",
-  "gemini-3-pro-medium": "gemini-3-pro",
-  "gemini-3-pro-high": "gemini-3-pro",
-  "gemini-3-pro-preview": "gemini-3-pro",
-
   // Claude proxy names (gemini- prefix for compatibility)
   "gemini-claude-sonnet-4-5": "claude-sonnet-4-5",
   "gemini-claude-sonnet-4-5-thinking-low": "claude-sonnet-4-5-thinking",
@@ -109,25 +103,28 @@ function isThinkingCapableModel(model: string): boolean {
  * @returns Resolved model with thinking configuration
  */
 export function resolveModelWithTier(requestedModel: string): ResolvedModel {
-  // Check for tier suffix
   const tier = extractThinkingTierFromModel(requestedModel);
-
-  // Strip tier suffix for lookup
   const baseName = tier ? requestedModel.replace(TIER_REGEX, "") : requestedModel;
 
-  // Resolve alias - check both full name (with tier) and base name
+  const isGemini3 = requestedModel.toLowerCase().includes("gemini-3");
+
+  if (isGemini3 && tier) {
+    return {
+      actualModel: requestedModel,
+      thinkingLevel: tier,
+      tier,
+      isThinkingModel: true,
+    };
+  }
+
   const actualModel = MODEL_ALIASES[requestedModel] || MODEL_ALIASES[baseName] || baseName;
-
-  // Check for model fallback
   const resolvedModel = MODEL_FALLBACKS[actualModel] || actualModel;
-
   const isThinking = isThinkingCapableModel(resolvedModel);
 
   if (!tier) {
     return { actualModel: resolvedModel, isThinkingModel: isThinking };
   }
 
-  // Gemini 3 uses thinkingLevel string
   if (resolvedModel.includes("gemini-3")) {
     return {
       actualModel: resolvedModel,
