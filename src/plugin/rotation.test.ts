@@ -126,6 +126,69 @@ describe("HealthScoreTracker", () => {
     });
   });
 
+  describe("time-based recovery", () => {
+    it("recovers points over time", () => {
+      let mockTime = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => mockTime);
+
+      const tracker = new HealthScoreTracker({ 
+        initial: 70, 
+        failurePenalty: -20, 
+        recoveryRatePerHour: 10 
+      });
+      
+      tracker.recordFailure(0);
+      expect(tracker.getScore(0)).toBe(50);
+
+      mockTime = 2 * 60 * 60 * 1000;
+      expect(tracker.getScore(0)).toBe(70);
+
+      vi.restoreAllMocks();
+    });
+
+    it("caps recovery at maxScore", () => {
+      let mockTime = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => mockTime);
+
+      const tracker = new HealthScoreTracker({ 
+        initial: 90, 
+        successReward: 5,
+        recoveryRatePerHour: 20,
+        maxScore: 100 
+      });
+      
+      tracker.recordSuccess(0);
+      expect(tracker.getScore(0)).toBe(95);
+      
+      mockTime = 60 * 60 * 1000;
+      expect(tracker.getScore(0)).toBe(100);
+
+      vi.restoreAllMocks();
+    });
+
+    it("floors recovered points (no partial points)", () => {
+      let mockTime = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => mockTime);
+
+      const tracker = new HealthScoreTracker({ 
+        initial: 70, 
+        failurePenalty: -10, 
+        recoveryRatePerHour: 2 
+      });
+      
+      tracker.recordFailure(0);
+      expect(tracker.getScore(0)).toBe(60);
+
+      mockTime = 20 * 60 * 1000;
+      expect(tracker.getScore(0)).toBe(60);
+
+      mockTime = 30 * 60 * 1000;
+      expect(tracker.getScore(0)).toBe(61);
+
+      vi.restoreAllMocks();
+    });
+  });
+
   describe("reset", () => {
     it("clears health state for account", () => {
       const tracker = new HealthScoreTracker({ initial: 70 });
@@ -247,6 +310,45 @@ describe("TokenBucketTracker", () => {
       const tracker = new TokenBucketTracker({ initialTokens: 50, maxTokens: 50 });
       tracker.refund(0, 10);
       expect(tracker.getTokens(0)).toBe(50);
+    });
+  });
+
+  describe("token regeneration", () => {
+    it("regenerates tokens over time", () => {
+      let mockTime = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => mockTime);
+
+      const tracker = new TokenBucketTracker({ 
+        initialTokens: 50, 
+        maxTokens: 50,
+        regenerationRatePerMinute: 6 
+      });
+      
+      tracker.consume(0, 30);
+      expect(tracker.getTokens(0)).toBe(20);
+
+      mockTime = 5 * 60 * 1000;
+      expect(tracker.getTokens(0)).toBe(50);
+
+      vi.restoreAllMocks();
+    });
+
+    it("caps regeneration at maxTokens", () => {
+      let mockTime = 0;
+      vi.spyOn(Date, 'now').mockImplementation(() => mockTime);
+
+      const tracker = new TokenBucketTracker({ 
+        initialTokens: 40, 
+        maxTokens: 50,
+        regenerationRatePerMinute: 6 
+      });
+      
+      tracker.consume(0, 1);
+      
+      mockTime = 10 * 60 * 1000;
+      expect(tracker.getTokens(0)).toBe(50);
+
+      vi.restoreAllMocks();
     });
   });
 });
