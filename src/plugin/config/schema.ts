@@ -14,9 +14,9 @@ import { z } from "zod";
 /**
  * Account selection strategy for distributing requests across accounts.
  * 
- * - `sticky` (default): Use same account until rate-limited. Preserves prompt cache.
+ * - `sticky`: Use same account until rate-limited. Preserves prompt cache.
  * - `round-robin`: Rotate to next account on every request. Maximum throughput.
- * - `hybrid`: Touch all fresh accounts first to sync reset timers, then sticky.
+ * - `hybrid` (default): Touch all fresh accounts first to sync reset timers, then sticky.
  * - `priority-queue`: Weighted random selection based on health score + token bucket + LRU.
  */
 export const AccountSelectionStrategySchema = z.enum(['sticky', 'round-robin', 'hybrid', 'priority-queue']);
