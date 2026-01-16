@@ -264,7 +264,8 @@ describe("TokenBucketTracker", () => {
     it("allows consuming exact remaining tokens", () => {
       const tracker = new TokenBucketTracker({ initialTokens: 10 });
       expect(tracker.consume(0, 10)).toBe(true);
-      expect(tracker.getTokens(0)).toBe(0);
+      // Use toBeCloseTo to handle floating point from micro-regeneration between calls
+      expect(tracker.getTokens(0)).toBeCloseTo(0, 2);
     });
 
     it("handles multiple consumes", () => {
