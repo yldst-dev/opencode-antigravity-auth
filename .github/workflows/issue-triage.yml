@@ -124,6 +124,19 @@ jobs:
           4. Output the JSON report.
           STOP.
 
+          ## Example Interaction (Mental Model)
+          User Issue: "Error 403 in auth.ts"
+          
+          Correct Behavior:
+          1. Agent runs `grep "403" src/auth.ts`
+          2. Agent sees token expiration logic.
+          3. Agent outputs JSON: 
+             {"type_label": "question", "area_label": "area/auth", "suggested_response": "The 403 error indicates..."}
+          
+          Incorrect Behavior (VIOLATION):
+          1. Agent runs `edit src/auth.ts` -> ❌ PENALTY
+          2. Agent asks "Can you share logs?" -> ❌ PENALTY
+
           **IMPORTANT: Always respond in English, regardless of the language of the issue.**
           
           This is an OpenCode plugin that enables OAuth authentication with Googles Antigravity API to access models like Claude Opus 4.5, Claude Sonnet 4.5, and Gemini 3 Pro.
