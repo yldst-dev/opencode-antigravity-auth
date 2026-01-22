@@ -372,17 +372,47 @@ function retryAfterMsFromResponse(response: Response, defaultRetryMs: number = 6
   return defaultRetryMs;
 }
 
+/**
+ * Parse Go-style duration strings to milliseconds.
+ * Supports compound durations: "1h16m0.667s", "1.5s", "200ms", "5m30s"
+ * 
+ * @param duration - Duration string in Go format
+ * @returns Duration in milliseconds, or null if parsing fails
+ */
 function parseDurationToMs(duration: string): number | null {
-  const match = duration.match(/^(\d+(?:\.\d+)?)(s|m|h)?$/i);
-  if (!match) return null;
-  const value = parseFloat(match[1]!);
-  const unit = (match[2] || "s").toLowerCase();
-  switch (unit) {
-    case "h": return value * 3600 * 1000;
-    case "m": return value * 60 * 1000;
-    case "s": return value * 1000;
-    default: return value * 1000;
+  // Handle simple formats first for backwards compatibility
+  const simpleMatch = duration.match(/^(\d+(?:\.\d+)?)(ms|s|m|h)?$/i);
+  if (simpleMatch) {
+    const value = parseFloat(simpleMatch[1]!);
+    const unit = (simpleMatch[2] || "s").toLowerCase();
+    switch (unit) {
+      case "h": return value * 3600 * 1000;
+      case "m": return value * 60 * 1000;
+      case "s": return value * 1000;
+      case "ms": return value;
+      default: return value * 1000;
+    }
   }
+  
+  // Parse compound Go-style durations: "1h16m0.667s", "5m30s", etc.
+  const compoundRegex = /(\d+(?:\.\d+)?)(h|m(?!s)|s|ms)/gi;
+  let totalMs = 0;
+  let matchFound = false;
+  let match;
+  
+  while ((match = compoundRegex.exec(duration)) !== null) {
+    matchFound = true;
+    const value = parseFloat(match[1]!);
+    const unit = match[2]!.toLowerCase();
+    switch (unit) {
+      case "h": totalMs += value * 3600 * 1000; break;
+      case "m": totalMs += value * 60 * 1000; break;
+      case "s": totalMs += value * 1000; break;
+      case "ms": totalMs += value; break;
+    }
+  }
+  
+  return matchFound ? totalMs : null;
 }
 
 interface RateLimitBodyInfo {
@@ -1154,6 +1184,9 @@ export const createAntigravityPlugin = (providerId: string) => async (
             let headerStyle = getHeaderStyleFromUrl(urlString, family);
             const explicitQuota = isExplicitQuotaFromUrl(urlString);
             pushDebug(`headerStyle=${headerStyle} explicit=${explicitQuota}`);
+            if (account.fingerprint) {
+              pushDebug(`fingerprint: quotaUser=${account.fingerprint.quotaUser} deviceId=${account.fingerprint.deviceId.slice(0, 8)}...`);
+            }
             
             // Check if this header style is rate-limited for this account
             if (accountManager.isRateLimitedForHeaderStyle(account, family, headerStyle, model)) {
@@ -1213,6 +1246,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                       mode: config.web_search.default_mode,
                       threshold: config.web_search.grounding_threshold
                     } : undefined,
+                    fingerprint: account.fingerprint,
                   },
                 );
 
@@ -1265,14 +1299,17 @@ export const createAntigravityPlugin = (providerId: string) => async (
                   // Goal: Wait and Retry SAME Account. DO NOT LOCK.
                   // We handle this FIRST to avoid calling getRateLimitBackoff() and polluting the global rate limit state for transient errors.
                   if (rateLimitReason === "MODEL_CAPACITY_EXHAUSTED" || rateLimitReason === "SERVER_ERROR") {
-                     // Use specific backoffs from accounts.ts constants
-                     // MODEL_CAPACITY_EXHAUSTED_BACKOFF = 15000
-                     // SERVER_ERROR_BACKOFF = 20000
-                     const smartBackoffMs = calculateBackoffMs(rateLimitReason, 0, serverRetryMs); // Pass 0 failures as we don't track them for capacity
-                     const waitMs = smartBackoffMs; 
+                     // Exponential backoff with jitter for capacity errors: 1s → 2s → 4s → 8s (max)
+                     // Matches Antigravity-Manager's ExponentialBackoff(1s, 8s)
+                     const baseDelayMs = 1000;
+                     const maxDelayMs = 8000;
+                     const exponentialDelay = Math.min(baseDelayMs * Math.pow(2, capacityRetryCount), maxDelayMs);
+                     // Add ±10% jitter to prevent thundering herd
+                     const jitter = exponentialDelay * (0.9 + Math.random() * 0.2);
+                     const waitMs = Math.round(jitter);
                      const waitSec = Math.round(waitMs / 1000);
                      
-                     pushDebug(`Server busy (${rateLimitReason}) on account ${account.index}, soft wait ${waitMs}ms`);
+                     pushDebug(`Server busy (${rateLimitReason}) on account ${account.index}, exponential backoff ${waitMs}ms (attempt ${capacityRetryCount + 1})`);
 
                      await showToast(
                        `⏳ Server busy (${response.status}). Retrying in ${waitSec}s...`,
@@ -1339,8 +1376,25 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     await showToast(`Rate limited. Quick retry in 1s...`, "warning");
                     await sleep(FIRST_RETRY_DELAY_MS, abortSignal);
                     
+                    // CacheFirst mode: wait for same account if within threshold (preserves prompt cache)
+                    if (config.scheduling_mode === 'cache_first') {
+                      const maxCacheFirstWaitMs = config.max_cache_first_wait_seconds * 1000;
+                      // effectiveDelayMs is the backoff calculated for this account
+                      if (effectiveDelayMs <= maxCacheFirstWaitMs) {
+                        pushDebug(`cache_first: waiting ${effectiveDelayMs}ms for same account to recover`);
+                        await showToast(`⏳ Waiting ${Math.ceil(effectiveDelayMs / 1000)}s for same account (prompt cache preserved)...`, "info");
+                        accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs);
+                        await sleep(effectiveDelayMs, abortSignal);
+                        // Retry same endpoint after wait
+                        i -= 1;
+                        continue;
+                      }
+                      // Wait time exceeds threshold, fall through to switch
+                      pushDebug(`cache_first: wait ${effectiveDelayMs}ms exceeds max ${maxCacheFirstWaitMs}ms, switching account`);
+                    }
+                    
                     if (config.switch_on_first_rate_limit && accountCount > 1) {
-                      accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs);
+                      accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs, config.failure_ttl_seconds * 1000);
                       shouldSwitchAccount = true;
                       break;
                     }
@@ -1350,7 +1404,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                     continue;
                   }
 
-                  accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs);
+                  accountManager.markRateLimitedWithReason(account, family, headerStyle, model, rateLimitReason, serverRetryMs, config.failure_ttl_seconds * 1000);
 
                   accountManager.requestSaveToDisk();
 
@@ -1470,6 +1524,7 @@ export const createAntigravityPlugin = (providerId: string) => async (
                 if (response.ok) {
                   account.consecutiveFailures = 0;
                   getHealthTracker().recordSuccess(account.index);
+                  accountManager.markAccountUsed(account.index);
                 }
                 logAntigravityDebugResponse(debugContext, response, {
                   note: response.ok ? "Success" : `Error ${response.status}`,
