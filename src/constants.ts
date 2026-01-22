@@ -82,6 +82,59 @@ export const GEMINI_CLI_HEADERS = {
   "Client-Metadata": "ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI",
 } as const;
 
+const ANTIGRAVITY_USER_AGENTS = [
+  "antigravity/1.11.5 windows/amd64",
+  "antigravity/1.11.4 darwin/arm64",
+  "antigravity/1.11.3 linux/amd64",
+  "antigravity/1.10.9 windows/amd64",
+  "antigravity/1.10.8 darwin/amd64",
+] as const;
+
+const ANTIGRAVITY_API_CLIENTS = [
+  "google-cloud-sdk vscode_cloudshelleditor/0.1",
+  "google-cloud-sdk vscode/1.96.0",
+  "google-cloud-sdk jetbrains/2024.3",
+  "google-cloud-sdk vscode/1.95.0",
+] as const;
+
+const GEMINI_CLI_USER_AGENTS = [
+  "google-api-nodejs-client/9.15.1",
+  "google-api-nodejs-client/9.14.0",
+  "google-api-nodejs-client/9.13.0",
+] as const;
+
+const GEMINI_CLI_API_CLIENTS = [
+  "gl-node/22.17.0",
+  "gl-node/22.12.0",
+  "gl-node/20.18.0",
+  "gl-node/21.7.0",
+] as const;
+
+function randomFrom<T>(arr: readonly T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)]!;
+}
+
+export type HeaderSet = {
+  "User-Agent": string;
+  "X-Goog-Api-Client": string;
+  "Client-Metadata": string;
+};
+
+export function getRandomizedHeaders(style: HeaderStyle): HeaderSet {
+  if (style === "gemini-cli") {
+    return {
+      "User-Agent": randomFrom(GEMINI_CLI_USER_AGENTS),
+      "X-Goog-Api-Client": randomFrom(GEMINI_CLI_API_CLIENTS),
+      "Client-Metadata": GEMINI_CLI_HEADERS["Client-Metadata"],
+    };
+  }
+  return {
+    "User-Agent": randomFrom(ANTIGRAVITY_USER_AGENTS),
+    "X-Goog-Api-Client": randomFrom(ANTIGRAVITY_API_CLIENTS),
+    "Client-Metadata": ANTIGRAVITY_HEADERS["Client-Metadata"],
+  };
+}
+
 export type HeaderStyle = "antigravity" | "gemini-cli";
 
 /**
