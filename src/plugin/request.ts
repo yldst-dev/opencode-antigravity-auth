@@ -68,6 +68,7 @@ import {
 } from "./transform";
 import { detectErrorType } from "./recovery";
 import { getSessionFingerprint, buildFingerprintHeaders, type Fingerprint } from "./fingerprint";
+import type { GoogleSearchConfig } from "./transform/types";
 
 const log = createLogger("request");
 
