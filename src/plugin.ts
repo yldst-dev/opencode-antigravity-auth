@@ -38,6 +38,7 @@ import { createAutoUpdateCheckerHook } from "./hooks/auto-update-checker";
 import { loadConfig, initRuntimeConfig, type AntigravityConfig } from "./plugin/config";
 import { createSessionRecoveryHook, getRecoverySuccessToast } from "./plugin/recovery";
 import { checkAccountsQuota } from "./plugin/quota";
+import { QuotaGuardCache, preflightQuotaCheck, maskEmail, type QuotaGuardConfig } from "./plugin/quota-guard";
 import { initDiskSignatureCache } from "./plugin/cache";
 import { createProactiveRefreshQueue, type ProactiveRefreshQueue } from "./plugin/refresh-queue";
 import { initLogger, createLogger } from "./plugin/logger";
@@ -917,6 +918,18 @@ export const createAntigravityPlugin = (providerId: string) => async (
         refreshQueue.start();
       }
 
+      // Initialize Quota Guard cache for proactive account switching
+      let quotaGuardCache: QuotaGuardCache | null = null;
+      if (config.quota_guard?.enabled) {
+        quotaGuardCache = new QuotaGuardCache(
+          config.quota_guard.quotaCacheTtlSeconds ?? 60
+        );
+        log.info("Quota Guard enabled", {
+          threshold: config.quota_guard.switchRemainingPercent,
+          cooldownMinutes: config.quota_guard.cooldownMinutes,
+        });
+      }
+
       if (isDebugEnabled()) {
         const logPath = getLogFilePath();
         if (logPath) {
@@ -1040,6 +1053,64 @@ export const createAntigravityPlugin = (providerId: string) => async (
             );
             
             if (!account) {
+              // Quota Guard: Enhanced wait loop with polling
+              const quotaGuardConfig = config.quota_guard;
+              if (quotaGuardConfig?.enabled && quotaGuardConfig.waitWhenNoAccount) {
+                const startTime = Date.now();
+                const maxWaitMs = quotaGuardConfig.maxWaitSeconds > 0 
+                  ? quotaGuardConfig.maxWaitSeconds * 1000 
+                  : Infinity;
+                const pollMs = quotaGuardConfig.waitPollSeconds * 1000;
+                
+                pushDebug(`quota-guard-wait: maxWait=${quotaGuardConfig.maxWaitSeconds}s poll=${quotaGuardConfig.waitPollSeconds}s`);
+                
+                // Quota Guard wait loop
+                while (true) {
+                  checkAborted();
+                  
+                  const elapsed = Date.now() - startTime;
+                  if (elapsed >= maxWaitMs) {
+                    throw new Error(
+                      `Quota guard timeout: All ${accountCount} account(s) exhausted. ` +
+                      `Waited ${quotaGuardConfig.maxWaitSeconds}s. Add more accounts or try later.`
+                    );
+                  }
+                  
+                  const remainingWait = Math.ceil((maxWaitMs - elapsed) / 1000);
+                  const waitMsg = quotaGuardConfig.maxWaitSeconds > 0
+                    ? `Waiting... (${remainingWait}s remaining)`
+                    : `Waiting ${quotaGuardConfig.waitPollSeconds}s...`;
+                  
+                  if (!allAccountsRateLimitedToastShown) {
+                    await showToast(
+                      `All accounts at quota limit. ${waitMsg}`,
+                      "warning"
+                    );
+                    allAccountsRateLimitedToastShown = true;
+                  }
+                  
+                  await sleep(pollMs, abortSignal);
+                  
+                  // Check for recovered accounts (cooldown expired)
+                  const recovered = accountManager.getCurrentOrNextForFamily(
+                    family, model, config.account_selection_strategy, 'antigravity', config.pid_offset_enabled
+                  );
+                  
+                  if (recovered) {
+                    resetAllAccountsRateLimitedToast();
+                    await showToast(
+                      `${maskEmail(recovered.email)} recovered, resuming...`,
+                      "success"
+                    );
+                    // Re-run the main loop with the recovered account
+                    break;
+                  }
+                }
+                // Continue to re-select account in main loop
+                continue;
+              }
+
+              // Fallback: Standard rate-limit wait logic
               const headerStyle = getHeaderStyleFromUrl(urlString, family);
               const explicitQuota = isExplicitQuotaFromUrl(urlString);
               // All accounts are rate-limited - wait and retry
@@ -1091,6 +1162,52 @@ export const createAntigravityPlugin = (providerId: string) => async (
 
             // Account is available - reset the toast flag
             resetAllAccountsRateLimitedToast();
+
+            // Quota Guard: Proactive quota check before request
+            if (config.quota_guard?.enabled && quotaGuardCache) {
+              const quotaGuardConfig = config.quota_guard as QuotaGuardConfig;
+              
+              const preflightResult = await preflightQuotaCheck(
+                account,
+                quotaGuardCache,
+                quotaGuardConfig,
+                async () => {
+                  // Fetch quota for this single account
+                  const stored = await loadAccounts();
+                  const storedAccount = stored?.accounts[account.index];
+                  if (!storedAccount) return null;
+                  
+                  const results = await checkAccountsQuota(
+                    [storedAccount],
+                    client,
+                    providerId
+                  );
+                  return results[0]?.quota ?? null;
+                }
+              );
+
+              if (preflightResult.shouldSwitch) {
+                // Mark account for cooldown and switch to next
+                accountManager.markQuotaGuardCooldown(account, quotaGuardConfig.cooldownMinutes);
+                quotaGuardCache.invalidate(account.index);
+                
+                log.info("Quota guard triggered", {
+                  account: maskEmail(account.email),
+                  remainingPercent: preflightResult.remainingPercent,
+                  cooldownMinutes: quotaGuardConfig.cooldownMinutes,
+                });
+                
+                pushDebug(`quota-guard: account ${account.index} at ${preflightResult.remainingPercent}%, switching`);
+                
+                await showToast(
+                  `${maskEmail(account.email)} at ${preflightResult.remainingPercent}% quota, switching...`,
+                  "warning"
+                );
+                
+                // Try next account
+                continue;
+              }
+            }
 
             pushDebug(
               `selected idx=${account.index} email=${account.email ?? ""} family=${family} accounts=${accountCount} strategy=${config.account_selection_strategy}`,

@@ -596,6 +596,41 @@ Control how the plugin handles rate limits:
 - **balance**: Best for quick tasks. Switches accounts immediately when rate-limited for maximum availability.
 - **performance_first**: Best for many short requests. Distributes load evenly across all accounts.
 
+### Quota Guard (Proactive Account Switching)
+
+Automatically switches accounts **before** quota is exhausted to prevent 429 errors and avoid the 2-day wait penalty when quota hits 0%.
+
+```json
+{
+  "quota_guard": {
+    "enabled": true,
+    "switchRemainingPercent": 5,
+    "cooldownMinutes": 300,
+    "waitWhenNoAccount": true,
+    "waitPollSeconds": 30,
+    "maxWaitSeconds": 0
+  }
+}
+```
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `enabled` | `true` | Enable proactive quota checking |
+| `switchRemainingPercent` | `5` | Switch when any quota group drops to this % |
+| `cooldownMinutes` | `300` | Cooldown duration for exhausted accounts (5 hours) |
+| `waitWhenNoAccount` | `true` | Wait for cooldown to expire (vs. error immediately) |
+| `waitPollSeconds` | `30` | Polling interval during wait |
+| `maxWaitSeconds` | `0` | Max wait time; 0 = wait indefinitely |
+| `quotaCacheTtlSeconds` | `60` | Cache quota results for this duration |
+
+**How it works:**
+1. Before each request, checks current account's quota (cached for 60s)
+2. If any quota group is at or below threshold (5%), marks account for cooldown and switches
+3. If no accounts available, waits and polls until one recovers
+4. Respects `maxWaitSeconds` timeout if set
+
+> **Important:** If quota hits 0%, there's a 2-day wait penalty. Quota Guard prevents this by switching at 5% remaining.
+
 ### App Behavior
 
 | Option | Default | What it does |

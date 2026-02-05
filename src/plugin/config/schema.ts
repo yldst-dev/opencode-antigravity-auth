@@ -32,6 +32,38 @@ export const SchedulingModeSchema = z.enum(['cache_first', 'balance', 'performan
 export type SchedulingMode = z.infer<typeof SchedulingModeSchema>;
 
 /**
+ * Quota Guard configuration for proactive account switching before quota exhaustion.
+ * 
+ * When enabled, checks account quota before each request (with caching) and
+ * switches to another account when remaining quota drops below threshold.
+ * This prevents 429 errors and avoids the 2-day wait when quota hits 0%.
+ */
+export const QuotaGuardConfigSchema = z.object({
+  /** Enable proactive quota checking (default: true) */
+  enabled: z.boolean().default(true),
+  
+  /** Switch when any quota group drops to this percentage (default: 5) */
+  switchRemainingPercent: z.number().min(0).max(100).default(5),
+  
+  /** Cooldown duration in minutes for exhausted accounts (default: 300 = 5 hours) */
+  cooldownMinutes: z.number().min(1).max(1440).default(300),
+  
+  /** Wait for cooldown to expire when all accounts exhausted (default: true) */
+  waitWhenNoAccount: z.boolean().default(true),
+  
+  /** Polling interval in seconds during wait (default: 30) */
+  waitPollSeconds: z.number().min(5).max(300).default(30),
+  
+  /** Max wait time in seconds; 0 = wait indefinitely (default: 0) */
+  maxWaitSeconds: z.number().min(0).max(7200).default(0),
+  
+  /** Cache quota results for this duration in seconds (default: 60) */
+  quotaCacheTtlSeconds: z.number().min(10).max(600).default(60),
+});
+
+export type QuotaGuardConfig = z.infer<typeof QuotaGuardConfigSchema>;
+
+/**
  * Signature cache configuration for persisting thinking block signatures to disk.
  */
 export const SignatureCacheConfigSchema = z.object({
@@ -359,6 +391,20 @@ export const AntigravityConfigSchema = z.object({
    * @default true
    */
   auto_update: z.boolean().default(true),
+  
+  // =========================================================================
+  // Quota Guard (Proactive Account Switching)
+  // =========================================================================
+  
+  /**
+   * Quota Guard configuration for proactive account switching.
+   * When enabled, checks quota before each request and switches accounts
+   * when remaining quota drops below threshold to prevent 429 errors.
+   * 
+   * Important: If quota hits 0%, there's a 2-day wait penalty.
+   * Quota Guard prevents this by switching at 5% remaining.
+   */
+  quota_guard: QuotaGuardConfigSchema.optional(),
 
 });
 
@@ -413,5 +459,14 @@ export const DEFAULT_CONFIG: AntigravityConfig = {
     max_tokens: 50,
     regeneration_rate_per_minute: 6,
     initial_tokens: 50,
+  },
+  quota_guard: {
+    enabled: true,
+    switchRemainingPercent: 5,
+    cooldownMinutes: 300,
+    waitWhenNoAccount: true,
+    waitPollSeconds: 30,
+    maxWaitSeconds: 0,
+    quotaCacheTtlSeconds: 60,
   },
 };

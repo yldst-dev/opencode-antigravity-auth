@@ -173,7 +173,7 @@ export interface AccountStorage {
   activeIndex: number;
 }
 
-export type CooldownReason = "auth-failure" | "network-error" | "project-error";
+export type CooldownReason = "auth-failure" | "network-error" | "project-error" | "quota-guard";
 
 export interface AccountMetadataV3 {
   email?: string;

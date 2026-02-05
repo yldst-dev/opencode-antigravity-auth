@@ -600,6 +600,15 @@ export class AccountManager {
     account.cooldownReason = reason;
   }
 
+  /**
+   * Mark an account as cooling down due to quota guard threshold.
+   * Uses the configured cooldown duration (default 5 hours).
+   */
+  markQuotaGuardCooldown(account: ManagedAccount, cooldownMinutes: number): void {
+    const cooldownMs = cooldownMinutes * 60 * 1000;
+    this.markAccountCoolingDown(account, cooldownMs, "quota-guard");
+  }
+
   isAccountCoolingDown(account: ManagedAccount): boolean {
     if (account.coolingDownUntil === undefined) {
       return false;
