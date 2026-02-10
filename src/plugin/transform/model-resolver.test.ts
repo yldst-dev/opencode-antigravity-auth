@@ -71,6 +71,14 @@ describe("resolveModelWithTier", () => {
       expect(result.isThinkingModel).toBe(true);
       expect(result.quotaPreference).toBe("antigravity");
     });
+
+    it("antigravity-claude-opus-4-6-thinking gets default max budget (32768)", () => {
+      const result = resolveModelWithTier("antigravity-claude-opus-4-6-thinking");
+      expect(result.actualModel).toBe("claude-opus-4-6-thinking");
+      expect(result.thinkingBudget).toBe(32768);
+      expect(result.isThinkingModel).toBe(true);
+      expect(result.quotaPreference).toBe("antigravity");
+    });
   });
 
   describe("Image models", () => {
@@ -166,6 +174,15 @@ describe("resolveModelWithVariant", () => {
 
       const highResult = resolveModelWithVariant("claude-opus-4-5-thinking-high");
       expect(highResult.thinkingBudget).toBe(32768);
+
+      const opus46Low = resolveModelWithVariant("claude-opus-4-6-thinking-low");
+      expect(opus46Low.thinkingBudget).toBe(8192);
+
+      const opus46Med = resolveModelWithVariant("claude-opus-4-6-thinking-medium");
+      expect(opus46Med.thinkingBudget).toBe(16384);
+
+      const opus46High = resolveModelWithVariant("claude-opus-4-6-thinking-high");
+      expect(opus46High.thinkingBudget).toBe(32768);
     });
 
     it("variant config overrides tier suffix", () => {

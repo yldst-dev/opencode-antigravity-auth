@@ -5,7 +5,7 @@
 [![npm version](https://img.shields.io/npm/v/yldst-opencode-antigravity-auth.svg)](https://www.npmjs.com/package/yldst-opencode-antigravity-auth)
 [![npm downloads](https://img.shields.io/npm/dw/yldst-opencode-antigravity-auth.svg)](https://www.npmjs.com/package/yldst-opencode-antigravity-auth)
 
-Google 계정으로 OAuth 인증하여 **Claude Opus 4.5**, **Sonnet 4.5**, **Gemini 3 Pro/Flash** 모델을 OpenCode에서 사용할 수 있게 해주는 플러그인입니다.
+Google 계정으로 OAuth 인증하여 **Claude Opus 4.6**, **Opus 4.5**, **Sonnet 4.5**, **Gemini 3 Pro/Flash** 모델을 OpenCode에서 사용할 수 있게 해주는 플러그인입니다.
 
 ---
 
@@ -82,6 +82,15 @@ opencode auth login
         },
         "antigravity-claude-opus-4-5-thinking": {
           "name": "Claude Opus 4.5 Thinking (Antigravity)",
+          "limit": { "context": 200000, "output": 64000 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
+            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
+          }
+        },
+        "antigravity-claude-opus-4-6-thinking": {
+          "name": "Claude Opus 4.6 Thinking (Antigravity)",
           "limit": { "context": 200000, "output": 64000 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
           "variants": {
