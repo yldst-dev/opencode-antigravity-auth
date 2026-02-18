@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.5.2] - 2026-02-18
+
+### Changed
+
+- Added support for Sonnet 4.6 and removed old models support.
+
 ## [1.5.1] - 2026-02-11
 
 ### Changed
