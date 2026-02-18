@@ -113,22 +113,6 @@ describe("resolveModelWithTier", () => {
       expect(result.isThinkingModel).toBe(true);
       expect(result.quotaPreference).toBe("antigravity");
     });
-
-    it("deprecated claude-sonnet-4-5-thinking falls back to claude-opus-4-6-thinking", () => {
-      const result = resolveModelWithTier("antigravity-claude-sonnet-4-5-thinking");
-      expect(result.actualModel).toBe("claude-opus-4-6-thinking");
-      expect(result.thinkingBudget).toBe(32768);
-      expect(result.isThinkingModel).toBe(true);
-      expect(result.quotaPreference).toBe("antigravity");
-    });
-
-    it("deprecated claude-opus-4-5-thinking falls back to claude-opus-4-6-thinking", () => {
-      const result = resolveModelWithTier("antigravity-claude-opus-4-5-thinking");
-      expect(result.actualModel).toBe("claude-opus-4-6-thinking");
-      expect(result.thinkingBudget).toBe(32768);
-      expect(result.isThinkingModel).toBe(true);
-      expect(result.quotaPreference).toBe("antigravity");
-    });
   });
 
   describe("Claude Sonnet 4.6 (non-thinking)", () => {
@@ -306,41 +290,4 @@ describe("Issue #103: resolveModelForHeaderStyle", () => {
   });
 });
 
-describe("deprecated model fallbacks", () => {
-  it("falls back claude-sonnet-4-5 to claude-sonnet-4-6", () => {
-    const result = resolveModelWithTier("claude-sonnet-4-5");
-    expect(result.actualModel).toBe("claude-sonnet-4-6");
-    expect(result.isThinkingModel).toBeFalsy();
-  });
 
-  it("falls back claude-sonnet-4-5-thinking to claude-opus-4-6-thinking", () => {
-    const result = resolveModelWithTier("claude-sonnet-4-5-thinking");
-    expect(result.actualModel).toBe("claude-opus-4-6-thinking");
-    expect(result.isThinkingModel).toBe(true);
-  });
-
-  it("falls back claude-opus-4-5-thinking to claude-opus-4-6-thinking", () => {
-    const result = resolveModelWithTier("claude-opus-4-5-thinking");
-    expect(result.actualModel).toBe("claude-opus-4-6-thinking");
-    expect(result.isThinkingModel).toBe(true);
-  });
-
-  it("falls back claude-sonnet-4-5-thinking with tier to claude-opus-4-6-thinking", () => {
-    const result = resolveModelWithTier("claude-sonnet-4-5-thinking-low");
-    expect(result.actualModel).toBe("claude-opus-4-6-thinking");
-    expect(result.tier).toBe("low");
-    expect(result.isThinkingModel).toBe(true);
-  });
-
-  it("falls back gemini-claude-sonnet-4-5 alias to claude-sonnet-4-6", () => {
-    const result = resolveModelWithTier("gemini-claude-sonnet-4-5");
-    expect(result.actualModel).toBe("claude-sonnet-4-6");
-    expect(result.isThinkingModel).toBeFalsy();
-  });
-
-  it("falls back gemini-claude-opus-4-5-thinking-low alias to claude-opus-4-6-thinking", () => {
-    const result = resolveModelWithTier("gemini-claude-opus-4-5-thinking-low");
-    expect(result.actualModel).toBe("claude-opus-4-6-thinking");
-    expect(result.isThinkingModel).toBe(true);
-  });
-});

@@ -21,7 +21,7 @@ Define variants in your model configuration:
 ```json
 {
   "antigravity-claude-opus-4-6-thinking": {
-    "name": "Claude Sonnet 4.6 Thinking",
+    "name": "Claude Opus 4.6 Thinking",
     "limit": { "context": 200000, "output": 64000 },
     "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
     "variants": {
@@ -109,7 +109,7 @@ Claude models use token-based thinking budgets:
 ```json
 {
   "antigravity-claude-opus-4-6-thinking": {
-    "name": "Claude Sonnet 4.6 Thinking (Antigravity)",
+    "name": "Claude Opus 4.6 Thinking (Antigravity)",
     "limit": { "context": 200000, "output": 64000 },
     "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
     "variants": {
