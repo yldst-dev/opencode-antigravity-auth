@@ -18,7 +18,6 @@ import {
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 const ENV_CONSOLE_LOG = "OPENCODE_ANTIGRAVITY_CONSOLE_LOG";
-const ANTIGRAVITY_CONSOLE_PREFIX = "[Antigravity]";
 
 export interface Logger {
   debug(message: string, extra?: Record<string, unknown>): void;
@@ -42,13 +41,6 @@ function isConsoleLogEnabled(): boolean {
  */
 export function initLogger(client: PluginClient): void {
   _client = client;
-}
-
-/**
- * Get the current client (for testing or advanced usage).
- */
-export function getLoggerClient(): PluginClient | null {
-  return _client;
 }
 
 /**
@@ -97,29 +89,4 @@ export function createLogger(module: string): Logger {
     warn: (message, extra) => log("warn", message, extra),
     error: (message, extra) => log("error", message, extra),
   };
-}
-
-/**
- * Print a message to the console with Antigravity prefix.
- * Only outputs when OPENCODE_ANTIGRAVITY_CONSOLE_LOG=1 is set.
- *
- * Use this for standalone messages that don't belong to a specific module.
- *
- * @param level - Log level
- * @param message - Message to print
- * @param extra - Optional extra data
- */
-export function printAntigravityConsole(
-  level: LogLevel,
-  message: string,
-  extra?: unknown,
-): void {
-  if (!isConsoleLogEnabled()) {
-    return;
-  }
-
-  const prefixedMessage = `${ANTIGRAVITY_CONSOLE_PREFIX} ${message}`;
-  const args = extra === undefined ? [prefixedMessage] : [prefixedMessage, extra];
-
-  writeConsoleLog(level, ...args);
 }

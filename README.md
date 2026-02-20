@@ -639,7 +639,8 @@ Control how the plugin handles rate limits:
 | Option | Default | What it does |
 |--------|---------|--------------|
 | `quiet_mode` | `false` | Hide toast notifications |
-| `debug` | `false` | Enable debug logging |
+| `debug` | `false` | Enable debug file logging (`~/.config/opencode/antigravity-logs/`) |
+| `debug_tui` | `false` | Show debug logs in the TUI log panel (independent from `debug`) |
 | `auto_update` | `true` | Auto-update plugin |
 
 For all options, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
@@ -647,8 +648,9 @@ For all options, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 **Environment variables:**
 ```bash
 OPENCODE_CONFIG_DIR=/path/to/config opencode  # Custom config directory
-OPENCODE_ANTIGRAVITY_DEBUG=1 opencode         # Enable debug logging
-OPENCODE_ANTIGRAVITY_DEBUG=2 opencode         # Verbose logging
+OPENCODE_ANTIGRAVITY_DEBUG=1 opencode         # Enable debug file logging
+OPENCODE_ANTIGRAVITY_DEBUG=2 opencode         # Verbose debug file logging
+OPENCODE_ANTIGRAVITY_DEBUG_TUI=1 opencode     # Enable TUI log panel debug output
 ```
 
 ---

@@ -99,7 +99,7 @@ export const AntigravityConfigSchema = z.object({
 
   /**
    * Show debug logs in the TUI log panel.
-   * Requires `debug: true` to have any effect.
+   * Works independently from `debug` file logging.
    * Env override: OPENCODE_ANTIGRAVITY_DEBUG_TUI=1
    * @default false
    */
