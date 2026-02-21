@@ -1,20 +1,23 @@
 /**
  * Structured Logger for Antigravity Plugin
  *
- * Provides TUI-integrated logging that is silent by default.
- * Logs are only visible when:
- * 1. TUI client is available (logs to app log panel)
- * 2. OPENCODE_ANTIGRAVITY_CONSOLE_LOG=1 is set (logs to console)
- *
- * Ported from opencode-google-antigravity-auth/src/plugin/logger.ts
+ * Logging behavior:
+ * - debug controls file logs only (via debug.ts)
+ * - debug_tui controls TUI log panel only
+ * - either sink can be enabled independently
+ * - OPENCODE_ANTIGRAVITY_CONSOLE_LOG=1 → console output (independent of debug flags)
  */
 
 import type { PluginClient } from "./types";
+import { isDebugTuiEnabled } from "./debug";
+import {
+  isTruthyFlag,
+  writeConsoleLog,
+} from "./logging-utils";
 
 type LogLevel = "debug" | "info" | "warn" | "error";
 
 const ENV_CONSOLE_LOG = "OPENCODE_ANTIGRAVITY_CONSOLE_LOG";
-const ANTIGRAVITY_CONSOLE_PREFIX = "[Antigravity]";
 
 export interface Logger {
   debug(message: string, extra?: Record<string, unknown>): void;
@@ -29,8 +32,7 @@ let _client: PluginClient | null = null;
  * Check if console logging is enabled via environment variable.
  */
 function isConsoleLogEnabled(): boolean {
-  const val = process.env[ENV_CONSOLE_LOG];
-  return val === "1" || val?.toLowerCase() === "true";
+  return isTruthyFlag(process.env[ENV_CONSOLE_LOG]);
 }
 
 /**
@@ -39,13 +41,6 @@ function isConsoleLogEnabled(): boolean {
  */
 export function initLogger(client: PluginClient): void {
   _client = client;
-}
-
-/**
- * Get the current client (for testing or advanced usage).
- */
-export function getLoggerClient(): PluginClient | null {
-  return _client;
 }
 
 /**
@@ -65,34 +60,25 @@ export function createLogger(module: string): Logger {
   const service = `antigravity.${module}`;
 
   const log = (level: LogLevel, message: string, extra?: Record<string, unknown>): void => {
-    // Try TUI logging first
-    const app = _client?.app;
-    if (app && typeof app.log === "function") {
-      app
-        .log({
-          body: { service, level, message, extra },
-        })
-        .catch(() => {
-          // Silently ignore logging errors
-        });
-    } else if (isConsoleLogEnabled()) {
-      // Fallback to console if env var is set
+    // TUI logging: controlled only by debug_tui policy
+    if (isDebugTuiEnabled()) {
+      const app = _client?.app;
+      if (app && typeof app.log === "function") {
+        app
+          .log({
+            body: { service, level, message, extra },
+          })
+          .catch(() => {
+            // Silently ignore logging errors
+          });
+      }
+    }
+
+    // Console fallback: when env var is set (independent of debug flags)
+    if (isConsoleLogEnabled()) {
       const prefix = `[${service}]`;
       const args = extra ? [prefix, message, extra] : [prefix, message];
-      switch (level) {
-        case "debug":
-          console.debug(...args);
-          break;
-        case "info":
-          console.info(...args);
-          break;
-        case "warn":
-          console.warn(...args);
-          break;
-        case "error":
-          console.error(...args);
-          break;
-      }
+      writeConsoleLog(level, ...args);
     }
     // If neither TUI nor console logging is enabled, log is silently discarded
   };
@@ -103,42 +89,4 @@ export function createLogger(module: string): Logger {
     warn: (message, extra) => log("warn", message, extra),
     error: (message, extra) => log("error", message, extra),
   };
-}
-
-/**
- * Print a message to the console with Antigravity prefix.
- * Only outputs when OPENCODE_ANTIGRAVITY_CONSOLE_LOG=1 is set.
- *
- * Use this for standalone messages that don't belong to a specific module.
- *
- * @param level - Log level
- * @param message - Message to print
- * @param extra - Optional extra data
- */
-export function printAntigravityConsole(
-  level: LogLevel,
-  message: string,
-  extra?: unknown,
-): void {
-  if (!isConsoleLogEnabled()) {
-    return;
-  }
-
-  const prefixedMessage = `${ANTIGRAVITY_CONSOLE_PREFIX} ${message}`;
-  const args = extra === undefined ? [prefixedMessage] : [prefixedMessage, extra];
-
-  switch (level) {
-    case "debug":
-      console.debug(...args);
-      break;
-    case "info":
-      console.info(...args);
-      break;
-    case "warn":
-      console.warn(...args);
-      break;
-    case "error":
-      console.error(...args);
-      break;
-  }
 }

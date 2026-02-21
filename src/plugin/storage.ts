@@ -4,6 +4,10 @@ import {
   readFileSync,
   writeFileSync,
   appendFileSync,
+  mkdirSync,
+  renameSync,
+  copyFileSync,
+  unlinkSync,
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { homedir } from "node:os";
@@ -173,7 +177,12 @@ export interface AccountStorage {
   activeIndex: number;
 }
 
-export type CooldownReason = "auth-failure" | "network-error" | "project-error" | "quota-guard";
+export type CooldownReason =
+  | "auth-failure"
+  | "network-error"
+  | "project-error"
+  | "validation-required"
+  | "quota-guard";
 
 export interface AccountMetadataV3 {
   email?: string;
@@ -189,6 +198,15 @@ export interface AccountMetadataV3 {
   cooldownReason?: CooldownReason;
   /** Per-account device fingerprint for rate limit mitigation */
   fingerprint?: import("./fingerprint").Fingerprint;
+  fingerprintHistory?: import("./fingerprint").FingerprintVersion[];
+  /** Set when Google asks the user to verify this account before requests can continue. */
+  verificationRequired?: boolean;
+  verificationRequiredAt?: number;
+  verificationRequiredReason?: string;
+  verificationUrl?: string;
+  /** Cached soft quota data */
+  cachedQuota?: Record<string, { remainingFraction?: number; resetTime?: string; modelCount: number }>;
+  cachedQuotaUpdatedAt?: number;
 }
 
 export interface AccountStorageV3 {
@@ -201,24 +219,138 @@ export interface AccountStorageV3 {
   };
 }
 
-type AnyAccountStorage = AccountStorageV1 | AccountStorage | AccountStorageV3;
+export interface AccountStorageV4 {
+  version: 4;
+  accounts: AccountMetadataV3[];
+  activeIndex: number;
+  activeIndexByFamily?: {
+    claude?: number;
+    gemini?: number;
+  };
+}
 
+type AnyAccountStorage =
+  | AccountStorageV1
+  | AccountStorage
+  | AccountStorageV3
+  | AccountStorageV4;
+
+/**
+ * Gets the legacy Windows config directory (%APPDATA%\opencode).
+ * Used for migration from older plugin versions.
+ */
+function getLegacyWindowsConfigDir(): string {
+  return join(
+    process.env.APPDATA || join(homedir(), "AppData", "Roaming"),
+    "opencode",
+  );
+}
+
+/**
+ * Gets the config directory path, with the following precedence:
+ * 1. OPENCODE_CONFIG_DIR env var (if set)
+ * 2. ~/.config/opencode (all platforms, including Windows)
+ *
+ * On Windows, also checks for legacy %APPDATA%\opencode path for migration.
+ */
 function getConfigDir(): string {
-  const platform = process.platform;
-  if (platform === "win32") {
-    return join(
-      process.env.APPDATA || join(homedir(), "AppData", "Roaming"),
-      "opencode",
-    );
+  // 1. Check for explicit override via env var
+  if (process.env.OPENCODE_CONFIG_DIR) {
+    return process.env.OPENCODE_CONFIG_DIR;
   }
 
+  // 2. Use ~/.config/opencode on all platforms (including Windows)
   const xdgConfig = process.env.XDG_CONFIG_HOME || join(homedir(), ".config");
   return join(xdgConfig, "opencode");
 }
 
-export function getStoragePath(): string {
-  return join(getConfigDir(), "antigravity-accounts.json");
+/**
+ * Migrates config from legacy Windows location to the new path.
+ * Moves the file if legacy exists and new doesn't.
+ * Returns true if migration was performed.
+ */
+function migrateLegacyWindowsConfig(): boolean {
+  if (process.platform !== "win32") {
+    return false;
+  }
+
+  const newPath = join(getConfigDir(), "antigravity-accounts.json");
+  const legacyPath = join(
+    getLegacyWindowsConfigDir(),
+    "antigravity-accounts.json",
+  );
+
+  // Only migrate if legacy exists and new doesn't
+  if (!existsSync(legacyPath) || existsSync(newPath)) {
+    return false;
+  }
+
+  try {
+    // Ensure new config directory exists
+    const newConfigDir = getConfigDir();
+
+    mkdirSync(newConfigDir, { recursive: true });
+
+    // Try rename first (atomic, but fails across filesystems)
+    try {
+      renameSync(legacyPath, newPath);
+      log.info("Migrated Windows config via rename", { from: legacyPath, to: newPath });
+    } catch {
+      // Fallback: copy then delete (for cross-filesystem moves)
+      copyFileSync(legacyPath, newPath);
+      unlinkSync(legacyPath);
+      log.info("Migrated Windows config via copy+delete", { from: legacyPath, to: newPath });
+    }
+
+    return true;
+  } catch (error) {
+    log.warn("Failed to migrate legacy Windows config, will use legacy path", {
+      legacyPath,
+      newPath,
+      error: String(error),
+    });
+    return false;
+  }
 }
+
+/**
+ * Gets the storage path, migrating from legacy Windows location if needed.
+ * On Windows, attempts to move legacy config to new path for alignment.
+ */
+function getStoragePathWithMigration(): string {
+  const newPath = join(getConfigDir(), "antigravity-accounts.json");
+
+  // On Windows, attempt to migrate legacy config to new location
+  if (process.platform === "win32") {
+    migrateLegacyWindowsConfig();
+
+    // If migration failed and legacy still exists, fall back to it
+    if (!existsSync(newPath)) {
+      const legacyPath = join(
+        getLegacyWindowsConfigDir(),
+        "antigravity-accounts.json",
+      );
+      if (existsSync(legacyPath)) {
+        log.info("Using legacy Windows config path (migration failed)", {
+          legacyPath,
+          newPath,
+        });
+        return legacyPath;
+      }
+    }
+  }
+
+  return newPath;
+}
+
+export function getStoragePath(): string {
+  return getStoragePathWithMigration();
+}
+
+/**
+ * Gets the config directory path. Exported for use by other modules.
+ */
+export { getConfigDir };
 
 const LOCK_OPTIONS = {
   stale: 10000,
@@ -230,6 +362,18 @@ const LOCK_OPTIONS = {
   },
 };
 
+/**
+ * Ensures the file has secure permissions (0600) on POSIX systems.
+ * This is a best-effort operation and ignores errors on Windows/unsupported FS.
+ */
+async function ensureSecurePermissions(path: string): Promise<void> {
+  try {
+    await fs.chmod(path, 0o600);
+  } catch {
+    // Ignore errors (e.g. Windows, file doesn't exist, FS doesn't support chmod)
+  }
+}
+
 async function ensureFileExists(path: string): Promise<void> {
   try {
     await fs.access(path);
@@ -237,8 +381,8 @@ async function ensureFileExists(path: string): Promise<void> {
     await fs.mkdir(dirname(path), { recursive: true });
     await fs.writeFile(
       path,
-      JSON.stringify({ version: 3, accounts: [], activeIndex: 0 }, null, 2),
-      "utf-8",
+      JSON.stringify({ version: 4, accounts: [], activeIndex: 0 }, null, 2),
+      { encoding: "utf-8", mode: 0o600 },
     );
   }
 }
@@ -261,9 +405,9 @@ async function withFileLock<T>(path: string, fn: () => Promise<T>): Promise<T> {
 }
 
 function mergeAccountStorage(
-  existing: AccountStorageV3,
-  incoming: AccountStorageV3,
-): AccountStorageV3 {
+  existing: AccountStorageV4,
+  incoming: AccountStorageV4,
+): AccountStorageV4 {
   const accountMap = new Map<string, AccountMetadataV3>();
 
   for (const acc of existing.accounts) {
@@ -295,7 +439,7 @@ function mergeAccountStorage(
   }
 
   return {
-    version: 3,
+    version: 4,
     accounts: Array.from(accountMap.values()),
     activeIndex: incoming.activeIndex,
     activeIndexByFamily: incoming.activeIndexByFamily,
@@ -434,9 +578,25 @@ export function migrateV2ToV3(v2: AccountStorage): AccountStorageV3 {
   };
 }
 
-export async function loadAccounts(): Promise<AccountStorageV3 | null> {
+export function migrateV3ToV4(v3: AccountStorageV3): AccountStorageV4 {
+  return {
+    version: 4,
+    accounts: v3.accounts.map((acc) => ({
+      ...acc,
+      fingerprint: undefined,
+      fingerprintHistory: undefined,
+    })),
+    activeIndex: v3.activeIndex,
+    activeIndexByFamily: v3.activeIndexByFamily,
+  };
+}
+
+export async function loadAccounts(): Promise<AccountStorageV4 | null> {
   try {
     const path = getStoragePath();
+    // Ensure permissions are correct on load (fixes existing files)
+    await ensureSecurePermissions(path);
+
     const content = await fs.readFile(path, "utf-8");
     const data = JSON.parse(content) as AnyAccountStorage;
 
@@ -445,32 +605,45 @@ export async function loadAccounts(): Promise<AccountStorageV3 | null> {
       return null;
     }
 
-    let storage: AccountStorageV3;
+    let storage: AccountStorageV4;
 
     if (data.version === 1) {
-      log.info("Migrating account storage from v1 to v3");
+      log.info("Migrating account storage from v1 to v4");
       const v2 = migrateV1ToV2(data);
-      storage = migrateV2ToV3(v2);
+      const v3 = migrateV2ToV3(v2);
+      storage = migrateV3ToV4(v3);
       try {
         await saveAccounts(storage);
-        log.info("Migration to v3 complete");
+        log.info("Migration to v4 complete");
       } catch (saveError) {
         log.warn("Failed to persist migrated storage", {
           error: String(saveError),
         });
       }
     } else if (data.version === 2) {
-      log.info("Migrating account storage from v2 to v3");
-      storage = migrateV2ToV3(data);
+      log.info("Migrating account storage from v2 to v4");
+      const v3 = migrateV2ToV3(data);
+      storage = migrateV3ToV4(v3);
       try {
         await saveAccounts(storage);
-        log.info("Migration to v3 complete");
+        log.info("Migration to v4 complete");
       } catch (saveError) {
         log.warn("Failed to persist migrated storage", {
           error: String(saveError),
         });
       }
     } else if (data.version === 3) {
+      log.info("Migrating account storage from v3 to v4");
+      storage = migrateV3ToV4(data);
+      try {
+        await saveAccounts(storage);
+        log.info("Migration to v4 complete");
+      } catch (saveError) {
+        log.warn("Failed to persist migrated storage", {
+          error: String(saveError),
+        });
+      }
+    } else if (data.version === 4) {
       storage = data;
     } else {
       log.warn("Unknown storage version, ignoring", {
@@ -507,9 +680,10 @@ export async function loadAccounts(): Promise<AccountStorageV3 | null> {
     }
 
     return {
-      version: 3,
+      version: 4,
       accounts: deduplicatedAccounts,
       activeIndex,
+      activeIndexByFamily: storage.activeIndexByFamily,
     };
   } catch (error) {
     const code = (error as NodeJS.ErrnoException).code;
@@ -521,7 +695,7 @@ export async function loadAccounts(): Promise<AccountStorageV3 | null> {
   }
 }
 
-export async function saveAccounts(storage: AccountStorageV3): Promise<void> {
+export async function saveAccounts(storage: AccountStorageV4): Promise<void> {
   const path = getStoragePath();
   const configDir = dirname(path);
   await fs.mkdir(configDir, { recursive: true });
@@ -535,7 +709,7 @@ export async function saveAccounts(storage: AccountStorageV3): Promise<void> {
     const content = JSON.stringify(merged, null, 2);
 
     try {
-      await fs.writeFile(tempPath, content, "utf-8");
+      await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 });
       await fs.rename(tempPath, path);
     } catch (error) {
       // Clean up temp file on failure to prevent accumulation
@@ -549,17 +723,52 @@ export async function saveAccounts(storage: AccountStorageV3): Promise<void> {
   });
 }
 
-async function loadAccountsUnsafe(): Promise<AccountStorageV3 | null> {
+/**
+ * Save accounts storage by replacing the entire file (no merge).
+ * Use this for destructive operations like delete where we need to
+ * remove accounts that would otherwise be merged back from existing storage.
+ */
+export async function saveAccountsReplace(storage: AccountStorageV4): Promise<void> {
+  const path = getStoragePath();
+  const configDir = dirname(path);
+  await fs.mkdir(configDir, { recursive: true });
+  await ensureGitignore(configDir);
+
+  await withFileLock(path, async () => {
+    const tempPath = `${path}.${randomBytes(6).toString("hex")}.tmp`;
+    const content = JSON.stringify(storage, null, 2);
+
+    try {
+      await fs.writeFile(tempPath, content, { encoding: "utf-8", mode: 0o600 });
+      await fs.rename(tempPath, path);
+    } catch (error) {
+      try {
+        await fs.unlink(tempPath);
+      } catch {
+        // Ignore cleanup errors
+      }
+      throw error;
+    }
+  });
+}
+
+async function loadAccountsUnsafe(): Promise<AccountStorageV4 | null> {
   try {
     const path = getStoragePath();
+    // Ensure permissions are correct on load (fixes existing files)
+    await ensureSecurePermissions(path);
+
     const content = await fs.readFile(path, "utf-8");
     const parsed = JSON.parse(content);
 
     if (parsed.version === 1) {
-      return migrateV2ToV3(migrateV1ToV2(parsed));
+      return migrateV3ToV4(migrateV2ToV3(migrateV1ToV2(parsed)));
     }
     if (parsed.version === 2) {
-      return migrateV2ToV3(parsed);
+      return migrateV3ToV4(migrateV2ToV3(parsed));
+    }
+    if (parsed.version === 3) {
+      return migrateV3ToV4(parsed);
     }
 
     return {

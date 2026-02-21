@@ -799,38 +799,57 @@ export interface VariantThinkingConfig {
  * 
  * 1. Gemini 3 native: { google: { thinkingLevel: "high", includeThoughts: true } }
  * 2. Budget-based (Claude/Gemini 2.5): { google: { thinkingConfig: { thinkingBudget: 32000 } } }
+ * 
+ * When providerOptions is missing or has no thinking config (common with OpenCode
+ * model variants), falls back to extracting from generationConfig directly:
+ * 3. generationConfig fallback: { thinkingConfig: { thinkingBudget: 8192 } }
  */
 export function extractVariantThinkingConfig(
-  providerOptions: Record<string, unknown> | undefined
+  providerOptions: Record<string, unknown> | undefined,
+  generationConfig?: Record<string, unknown> | undefined
 ): VariantThinkingConfig | undefined {
-  if (!providerOptions) return undefined;
-
-  const google = providerOptions.google as Record<string, unknown> | undefined;
-  if (!google) return undefined;
-
   const result: VariantThinkingConfig = {};
 
-  // Gemini 3 native format: { google: { thinkingLevel: "high", includeThoughts: true } }
-  // thinkingLevel takes priority over thinkingBudget - they are mutually exclusive
-  if (typeof google.thinkingLevel === "string") {
-    result.thinkingLevel = google.thinkingLevel;
-    result.includeThoughts = typeof google.includeThoughts === "boolean" ? google.includeThoughts : undefined;
-  } else if (google.thinkingConfig && typeof google.thinkingConfig === "object") {
-    // Budget-based format (Claude/Gemini 2.5): { google: { thinkingConfig: { thinkingBudget } } }
-    // Only used when thinkingLevel is not present
-    const tc = google.thinkingConfig as Record<string, unknown>;
-    if (typeof tc.thinkingBudget === "number") {
-      result.thinkingBudget = tc.thinkingBudget;
+  // Primary path: extract from providerOptions.google
+  const google = (providerOptions?.google) as Record<string, unknown> | undefined;
+  if (google) {
+    // Gemini 3 native format: { google: { thinkingLevel: "high", includeThoughts: true } }
+    // thinkingLevel takes priority over thinkingBudget - they are mutually exclusive
+    if (typeof google.thinkingLevel === "string") {
+      result.thinkingLevel = google.thinkingLevel;
+      result.includeThoughts = typeof google.includeThoughts === "boolean" ? google.includeThoughts : undefined;
+    } else if (google.thinkingConfig && typeof google.thinkingConfig === "object") {
+      // Budget-based format (Claude/Gemini 2.5): { google: { thinkingConfig: { thinkingBudget } } }
+      // Only used when thinkingLevel is not present
+      const tc = google.thinkingConfig as Record<string, unknown>;
+      if (typeof tc.thinkingBudget === "number") {
+        result.thinkingBudget = tc.thinkingBudget;
+      }
+    }
+
+    // Extract Google Search config
+    if (google.googleSearch && typeof google.googleSearch === "object") {
+      const search = google.googleSearch as Record<string, unknown>;
+      result.googleSearch = {
+        mode: search.mode === 'auto' || search.mode === 'off' ? search.mode : undefined,
+        threshold: typeof search.threshold === 'number' ? search.threshold : undefined,
+      };
     }
   }
 
-  // Extract Google Search config
-  if (google.googleSearch && typeof google.googleSearch === "object") {
-    const search = google.googleSearch as Record<string, unknown>;
-    result.googleSearch = {
-      mode: search.mode === 'auto' || search.mode === 'off' ? search.mode : undefined,
-      threshold: typeof search.threshold === 'number' ? search.threshold : undefined,
-    };
+  // Fallback: OpenCode may pass thinking config in generationConfig
+  // instead of providerOptions (common when using model variants)
+  if (result.thinkingBudget === undefined && !result.thinkingLevel && generationConfig) {
+    if (generationConfig.thinkingConfig && typeof generationConfig.thinkingConfig === "object") {
+      const tc = generationConfig.thinkingConfig as Record<string, unknown>;
+      if (typeof tc.thinkingLevel === "string") {
+        // Gemini 3 native format sent via generationConfig
+        result.thinkingLevel = tc.thinkingLevel;
+        result.includeThoughts = typeof tc.includeThoughts === "boolean" ? tc.includeThoughts : undefined;
+      } else if (typeof tc.thinkingBudget === "number") {
+        result.thinkingBudget = tc.thinkingBudget;
+      }
+    }
   }
 
   return Object.keys(result).length > 0 ? result : undefined;
@@ -1117,7 +1136,17 @@ function filterContentArray(
     }
 
     if (isToolBlock(item)) {
-      filtered.push(item);
+      if (!isClaudeModel) {
+        filtered.push(item);
+        continue;
+      }
+
+      const sanitizedToolBlock = { ...(item as Record<string, unknown>) };
+      delete (sanitizedToolBlock as any).signature;
+      delete (sanitizedToolBlock as any).thoughtSignature;
+      delete (sanitizedToolBlock as any).thought_signature;
+      delete (sanitizedToolBlock as any).thought;
+      filtered.push(sanitizedToolBlock);
       continue;
     }
 
@@ -1126,6 +1155,17 @@ function filterContentArray(
 
     if (!isThinking && !hasSignature) {
       filtered.push(item);
+      continue;
+    }
+
+    if (isClaudeModel && (isThinking || hasSignature)) {
+      const thinkingText = getThinkingText(item) || "";
+      const sentinelPart = {
+        type: item.type === "redacted_thinking" ? "redacted_thinking" : "thinking",
+        thinking: thinkingText,
+        signature: SKIP_THOUGHT_SIGNATURE,
+      };
+      filtered.push(sentinelPart);
       continue;
     }
 
@@ -2814,4 +2854,3 @@ data: ${JSON.stringify({ type: "message_stop" })}
     },
   });
 }
-

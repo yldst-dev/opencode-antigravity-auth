@@ -661,7 +661,7 @@ describe("applyClaudeTransforms", () => {
     const payload: RequestPayload = {};
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       cleanJSONSchema: mockCleanJSONSchema,
     });
     
@@ -672,7 +672,7 @@ describe("applyClaudeTransforms", () => {
     const payload: RequestPayload = {};
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5-thinking",
+      model: "claude-opus-4-6-thinking",
       normalizedThinking: { includeThoughts: true, thinkingBudget: 8192 },
       cleanJSONSchema: mockCleanJSONSchema,
     });
@@ -686,7 +686,7 @@ describe("applyClaudeTransforms", () => {
     const payload: RequestPayload = {};
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5-thinking",
+      model: "claude-opus-4-6-thinking",
       tierThinkingBudget: 32768,
       normalizedThinking: { includeThoughts: true, thinkingBudget: 8192 },
       cleanJSONSchema: mockCleanJSONSchema,
@@ -702,7 +702,7 @@ describe("applyClaudeTransforms", () => {
     };
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5-thinking",
+      model: "claude-opus-4-6-thinking",
       normalizedThinking: { includeThoughts: true, thinkingBudget: 8192 },
       cleanJSONSchema: mockCleanJSONSchema,
     });
@@ -715,7 +715,7 @@ describe("applyClaudeTransforms", () => {
     const payload: RequestPayload = {};
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       normalizedThinking: { includeThoughts: true, thinkingBudget: 8192 },
       cleanJSONSchema: mockCleanJSONSchema,
     });
@@ -731,7 +731,7 @@ describe("applyClaudeTransforms", () => {
     };
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5-thinking",
+      model: "claude-opus-4-6-thinking",
       cleanJSONSchema: mockCleanJSONSchema,
     });
     
@@ -744,7 +744,7 @@ describe("applyClaudeTransforms", () => {
     };
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5-thinking",
+      model: "claude-opus-4-6-thinking",
       cleanJSONSchema: mockCleanJSONSchema,
     });
     
@@ -758,7 +758,7 @@ describe("applyClaudeTransforms", () => {
     };
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       cleanJSONSchema: mockCleanJSONSchema,
     });
     
@@ -771,7 +771,7 @@ describe("applyClaudeTransforms", () => {
     };
     
     const result = applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       cleanJSONSchema: mockCleanJSONSchema,
     });
     
@@ -785,7 +785,7 @@ describe("applyClaudeTransforms", () => {
     };
     
     applyClaudeTransforms(payload, {
-      model: "claude-sonnet-4-5",
+      model: "claude-sonnet-4-6",
       cleanJSONSchema: mockCleanJSONSchema,
     });
     

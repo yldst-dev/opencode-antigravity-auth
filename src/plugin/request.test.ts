@@ -1,10 +1,15 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import {
   prepareAntigravityRequest,
+  transformAntigravityResponse,
   getPluginSessionId,
   isGenerativeLanguageRequest,
   __testExports,
 } from "./request";
+import { DEFAULT_CONFIG } from "./config";
+import { initializeDebug } from "./debug";
+import { SKIP_THOUGHT_SIGNATURE } from "../constants";
+import * as config from "./config";
 import type { SignatureStore, ThoughtBuffer, StreamingCallbacks, StreamingOptions } from "./core/streaming/types";
 
 const {
@@ -51,6 +56,15 @@ function createMockThoughtBuffer(): ThoughtBuffer {
 const defaultCallbacks: StreamingCallbacks = {};
 const defaultOptions: StreamingOptions = {};
 const defaultDebugState = { injected: false };
+
+function withKeepThinking<T>(enabled: boolean, fn: () => T): T {
+  const keepThinkingSpy = vi.spyOn(config, "getKeepThinking").mockReturnValue(enabled);
+  try {
+    return fn();
+  } finally {
+    keepThinkingSpy.mockRestore();
+  }
+}
 
 describe("request.ts", () => {
   describe("getPluginSessionId", () => {
@@ -236,11 +250,11 @@ describe("request.ts", () => {
       expect(result.thoughtSignature).toBe("skip_thought_signature_validator");
     });
 
-    it("preserves existing thoughtSignature", () => {
+    it("replaces untrusted thoughtSignature with sentinel", () => {
       const existingSignature = "a".repeat(MIN_SIGNATURE_LENGTH + 10);
       const part = { thought: true, text: "thinking...", thoughtSignature: existingSignature };
       const result = ensureThoughtSignature(part, "session-key");
-      expect(result.thoughtSignature).toBe(existingSignature);
+      expect(result.thoughtSignature).toBe("skip_thought_signature_validator");
     });
 
     it("does not modify non-thinking parts", () => {
@@ -572,7 +586,7 @@ describe("request.ts", () => {
       expect(headers.get("Authorization")).toBe("Bearer test-token");
     });
 
-    it("removes x-api-key header", () => {
+it("removes x-api-key header", () => {
       const result = prepareAntigravityRequest(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent",
         { method: "POST", body: JSON.stringify({ contents: [] }), headers: { "x-api-key": "old-key" } },
@@ -581,6 +595,65 @@ describe("request.ts", () => {
       );
       const headers = result.init.headers as Headers;
       expect(headers.get("x-api-key")).toBeNull();
+    });
+
+    it("removes x-goog-user-project header for antigravity headerStyle", () => {
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/claude-opus-4-6-thinking:generateContent",
+        { method: "POST", body: JSON.stringify({ contents: [] }), headers: { "x-goog-user-project": "my-project" } },
+        mockAccessToken,
+        mockProjectId,
+        undefined,
+        "antigravity"
+      );
+      const headers = result.init.headers as Headers;
+      expect(headers.get("x-goog-user-project")).toBeNull();
+    });
+
+    it("removes x-goog-user-project header for gemini-cli headerStyle", () => {
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        { method: "POST", body: JSON.stringify({ contents: [] }), headers: { "x-goog-user-project": "my-project" } },
+        mockAccessToken,
+        mockProjectId,
+        undefined,
+        "gemini-cli"
+      );
+      const headers = result.init.headers as Headers;
+      expect(headers.get("x-goog-user-project")).toBeNull();
+    });
+
+    it("uses exact Code Assist headers for gemini-cli headerStyle", () => {
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent",
+        { method: "POST", body: JSON.stringify({ contents: [] }) },
+        mockAccessToken,
+        mockProjectId,
+        undefined,
+        "gemini-cli"
+      );
+      const headers = result.init.headers as Headers;
+      expect(headers.get("User-Agent")).toBe("google-api-nodejs-client/9.15.1");
+      expect(headers.get("X-Goog-Api-Client")).toBe("gl-node/22.17.0");
+      expect(headers.get("Client-Metadata")).toBe("ideType=IDE_UNSPECIFIED,platform=PLATFORM_UNSPECIFIED,pluginType=GEMINI");
+    });
+
+    it("builds gemini-cli wrapped body without antigravity-only fields", () => {
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent",
+        { method: "POST", body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "hi" }] }] }) },
+        mockAccessToken,
+        "",
+        undefined,
+        "gemini-cli"
+      );
+      const parsed = JSON.parse(result.init.body as string);
+      expect(parsed).toHaveProperty("project", "");
+      expect(parsed).toHaveProperty("model");
+      expect(parsed).toHaveProperty("request");
+      expect(parsed.requestType).toBeUndefined();
+      expect(parsed.userAgent).toBeUndefined();
+      expect(parsed.requestId).toBeUndefined();
     });
 
     it("identifies Claude models correctly", () => {
@@ -642,6 +715,217 @@ describe("request.ts", () => {
       expect(result.streaming).toBe(false);
     });
 
+    it("does not add Claude auto-caching to wrapped request by default", () => {
+      const wrappedBody = {
+        project: "my-project",
+        request: { messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }] }
+      };
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/claude-3-7-sonnet:generateContent",
+        { method: "POST", body: JSON.stringify(wrappedBody) },
+        mockAccessToken,
+        mockProjectId,
+      );
+
+      const wrapped = JSON.parse(result.init.body as string);
+      expect(wrapped.request.cache_control).toBeUndefined();
+    });
+
+    it("does not add Claude auto-caching to unwrapped request by default", () => {
+      const unwrappedBody = {
+        messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }]
+      };
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/claude-3-7-sonnet:generateContent",
+        { method: "POST", body: JSON.stringify(unwrappedBody) },
+        mockAccessToken,
+        mockProjectId,
+      );
+
+      const wrapped = JSON.parse(result.init.body as string);
+      expect(wrapped.request.cache_control).toBeUndefined();
+    });
+
+    it("adds Claude auto-caching when enabled", () => {
+      const unwrappedBody = {
+        messages: [{ role: "user", content: [{ type: "text", text: "Hello" }] }]
+      };
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/claude-3-7-sonnet:generateContent",
+        { method: "POST", body: JSON.stringify(unwrappedBody) },
+        mockAccessToken,
+        mockProjectId,
+        undefined,
+        "antigravity",
+        false,
+        { claudePromptAutoCaching: true },
+      );
+
+      const wrapped = JSON.parse(result.init.body as string);
+      expect(wrapped.request.cache_control).toEqual({ type: "ephemeral" });
+    });
+
+    it("strips Claude thinking blocks when keep_thinking is false (unwrapped)", () => {
+      const result = withKeepThinking(false, () => prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/claude-opus-4-6-thinking:generateContent",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "model",
+                parts: [
+                  {
+                    thought: true,
+                    text: "foreign-thought-unwrapped",
+                    thoughtSignature: "f".repeat(MIN_SIGNATURE_LENGTH + 8),
+                  },
+                  { functionCall: { name: "weather", args: {} } },
+                ],
+              },
+            ],
+          }),
+        },
+        mockAccessToken,
+        mockProjectId,
+      ));
+
+      const wrapped = JSON.parse(result.init.body as string);
+      const parts = wrapped.request.contents[0].parts as Array<Record<string, unknown>>;
+      const thinkingParts = parts.filter((part) =>
+        part.thought === true
+        || part.type === "thinking"
+        || part.type === "redacted_thinking"
+        || part.type === "reasoning",
+      );
+
+      expect(thinkingParts).toHaveLength(0);
+      expect(result.needsSignedThinkingWarmup).toBe(false);
+    });
+
+    it("strips Claude thinking blocks when keep_thinking is false (wrapped)", () => {
+      const result = withKeepThinking(false, () => prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/claude-opus-4-6-thinking:generateContent",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            project: "my-project",
+            request: {
+              contents: [
+                {
+                  role: "model",
+                  parts: [
+                    {
+                      thought: true,
+                      text: "foreign-thought-wrapped",
+                      thoughtSignature: "w".repeat(MIN_SIGNATURE_LENGTH + 8),
+                    },
+                    { functionCall: { name: "weather", args: {} } },
+                  ],
+                },
+              ],
+            },
+          }),
+        },
+        mockAccessToken,
+        mockProjectId,
+      ));
+
+      const wrapped = JSON.parse(result.init.body as string);
+      const parts = wrapped.request.contents[0].parts as Array<Record<string, unknown>>;
+      const thinkingParts = parts.filter((part) =>
+        part.thought === true
+        || part.type === "thinking"
+        || part.type === "redacted_thinking"
+        || part.type === "reasoning",
+      );
+
+      expect(thinkingParts).toHaveLength(0);
+      expect(result.needsSignedThinkingWarmup).toBe(false);
+    });
+
+    it("does not trust foreign Gemini thoughtSignature when keep_thinking is true", () => {
+      const foreignSignature = "x".repeat(MIN_SIGNATURE_LENGTH + 8);
+      const result = withKeepThinking(true, () => prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/claude-opus-4-6-thinking:generateContent",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "model",
+                parts: [
+                  {
+                    thought: true,
+                    text: "foreign-thought-keep-true",
+                    thoughtSignature: foreignSignature,
+                  },
+                  { functionCall: { name: "weather", args: {} } },
+                ],
+              },
+            ],
+          }),
+        },
+        mockAccessToken,
+        mockProjectId,
+      ));
+
+      const wrapped = JSON.parse(result.init.body as string);
+      const parts = wrapped.request.contents[0].parts as Array<Record<string, unknown>>;
+      const thinkingBlock = parts.find((part) =>
+        part.thought === true || part.type === "thinking" || part.type === "redacted_thinking",
+      );
+      const signature = typeof thinkingBlock?.signature === "string"
+        ? thinkingBlock.signature
+        : thinkingBlock?.thoughtSignature;
+
+      expect(JSON.stringify(wrapped)).not.toContain(foreignSignature);
+      if (thinkingBlock) {
+        expect(signature).toBe(SKIP_THOUGHT_SIGNATURE);
+      }
+    });
+
+    it("replaces foreign Claude signatures with sentinel when keep_thinking is true", () => {
+      const foreignSignature = "y".repeat(MIN_SIGNATURE_LENGTH + 8);
+      const result = withKeepThinking(true, () => prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/claude-opus-4-6-thinking:generateContent",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            messages: [
+              {
+                role: "assistant",
+                content: [
+                  {
+                    type: "thinking",
+                    thinking: "foreign-message-thinking",
+                    signature: foreignSignature,
+                  },
+                  {
+                    type: "tool_use",
+                    id: "tool-1",
+                    name: "weather",
+                    input: {},
+                  },
+                ],
+              },
+            ],
+          }),
+        },
+        mockAccessToken,
+        mockProjectId,
+      ));
+
+      const wrapped = JSON.parse(result.init.body as string);
+      const content = wrapped.request.messages[0].content as Array<Record<string, unknown>>;
+      const thinkingBlock = content.find((block) => block.type === "thinking" || block.type === "redacted_thinking");
+
+      expect(thinkingBlock).toBeTruthy();
+      expect(thinkingBlock?.signature).toBe(SKIP_THOUGHT_SIGNATURE);
+      expect(JSON.stringify(content)).not.toContain(foreignSignature);
+      expect(result.needsSignedThinkingWarmup).toBe(false);
+    });
+
     it("returns requestedModel matching URL model", () => {
       const result = prepareAntigravityRequest(
         "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
@@ -670,6 +954,61 @@ describe("request.ts", () => {
         mockProjectId
       );
       expect(result.streaming).toBe(false);
+    });
+
+    it("removes contents entries with empty or invalid parts", () => {
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            contents: [
+              { role: "user", parts: [] },
+              { role: "model", parts: [null, { text: "kept" }] },
+              { role: "user", parts: null },
+            ],
+            systemInstruction: {
+              role: "user",
+              parts: [null, { text: "system kept" }],
+            },
+          }),
+        },
+        mockAccessToken,
+        mockProjectId,
+        undefined,
+        "gemini-cli",
+      );
+
+      const wrapped = JSON.parse(result.init.body as string);
+      expect(wrapped.request.contents).toHaveLength(1);
+      expect(wrapped.request.contents[0]).toEqual({
+        role: "model",
+        parts: [{ text: "kept" }],
+      });
+      expect(wrapped.request.systemInstruction.parts).toEqual([{ text: "system kept" }]);
+    });
+
+    it("drops systemInstruction when all parts are invalid", () => {
+      const result = prepareAntigravityRequest(
+        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            contents: [{ role: "user", parts: [{ text: "hi" }] }],
+            systemInstruction: {
+              role: "user",
+              parts: [null],
+            },
+          }),
+        },
+        mockAccessToken,
+        mockProjectId,
+        undefined,
+        "gemini-cli",
+      );
+
+      const wrapped = JSON.parse(result.init.body as string);
+      expect(wrapped.request.systemInstruction).toBeUndefined();
     });
 
     it("preserves headerStyle in response", () => {
@@ -709,6 +1048,30 @@ describe("request.ts", () => {
         expect(result.effectiveModel).toBe("gemini-3-pro-low");
       });
 
+      it("transforms gemini-3.1-pro-preview to gemini-3.1-pro-low for antigravity headerStyle", () => {
+        const result = prepareAntigravityRequest(
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent",
+          { method: "POST", body: JSON.stringify({ contents: [] }) },
+          mockAccessToken,
+          mockProjectId,
+          undefined,
+          "antigravity"
+        );
+        expect(result.effectiveModel).toBe("gemini-3.1-pro-low");
+      });
+
+      it("transforms gemini-3.1-pro-preview-customtools to gemini-3.1-pro-low for antigravity headerStyle", () => {
+        const result = prepareAntigravityRequest(
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview-customtools:generateContent",
+          { method: "POST", body: JSON.stringify({ contents: [] }) },
+          mockAccessToken,
+          mockProjectId,
+          undefined,
+          "antigravity"
+        );
+        expect(result.effectiveModel).toBe("gemini-3.1-pro-low");
+      });
+
       it("transforms gemini-3-flash to gemini-3-flash-preview for gemini-cli headerStyle", () => {
         const result = prepareAntigravityRequest(
           "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent",
@@ -733,6 +1096,30 @@ describe("request.ts", () => {
         expect(result.effectiveModel).toBe("gemini-3-pro-preview");
       });
 
+      it("transforms gemini-3.1-pro-low to gemini-3.1-pro-preview for gemini-cli headerStyle", () => {
+        const result = prepareAntigravityRequest(
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-low:generateContent",
+          { method: "POST", body: JSON.stringify({ contents: [] }) },
+          mockAccessToken,
+          mockProjectId,
+          undefined,
+          "gemini-cli"
+        );
+        expect(result.effectiveModel).toBe("gemini-3.1-pro-preview");
+      });
+
+      it("keeps gemini-3.1-pro-preview-customtools unchanged for gemini-cli headerStyle", () => {
+        const result = prepareAntigravityRequest(
+          "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview-customtools:generateContent",
+          { method: "POST", body: JSON.stringify({ contents: [] }) },
+          mockAccessToken,
+          mockProjectId,
+          undefined,
+          "gemini-cli"
+        );
+        expect(result.effectiveModel).toBe("gemini-3.1-pro-preview-customtools");
+      });
+
       it("keeps non-Gemini-3 models unchanged regardless of headerStyle", () => {
         const result = prepareAntigravityRequest(
           "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
@@ -744,6 +1131,117 @@ describe("request.ts", () => {
         );
         expect(result.effectiveModel).toBe("gemini-2.5-flash");
       });
+    });
+  });
+
+  describe("transformAntigravityResponse", () => {
+    it("injects [ThinkingResolution] details when debug_tui is enabled", async () => {
+      initializeDebug({
+        ...DEFAULT_CONFIG,
+        debug: false,
+        debug_tui: true,
+      });
+
+      const response = new Response(
+        JSON.stringify({
+          error: {
+            code: 500,
+            message: "Upstream error",
+            status: "INTERNAL",
+          },
+        }),
+        {
+          status: 500,
+          headers: { "content-type": "application/json" },
+        },
+      );
+
+      const transformed = await transformAntigravityResponse(
+        response,
+        false,
+        undefined,
+        "gemini-2.5-pro",
+        "test-project",
+        "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent",
+        "gemini-2.5-pro",
+        "session-1",
+        0,
+        "summary",
+        undefined,
+        [
+          "status=500 INTERNAL",
+          "endpoint=https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent",
+          "account=test@example.com",
+        ],
+      );
+
+      const bodyText = await transformed.text();
+      expect(bodyText).toContain("[ThinkingResolution]");
+      expect(bodyText).toContain("status=500 INTERNAL");
+      expect(bodyText).toContain("endpoint=https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:generateContent");
+      expect(bodyText).toContain("account=test@example.com");
+
+      initializeDebug(DEFAULT_CONFIG);
+    });
+
+    it("does not misclassify generic INVALID_ARGUMENT as thinking recovery from debug metadata", async () => {
+      const response = new Response(
+        JSON.stringify({
+          error: {
+            code: 400,
+            message: "Request contains an invalid argument.",
+            status: "INVALID_ARGUMENT",
+          },
+        }),
+        {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        },
+      );
+
+      const transformed = await transformAntigravityResponse(
+        response,
+        true,
+        undefined,
+        "antigravity-claude-opus-4-6-thinking",
+        "test-project",
+        "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+        "claude-opus-4-6-thinking",
+        "session-1",
+        0,
+        "expected=1 found=0",
+      );
+
+      await expect(transformed.text()).resolves.toContain("Request contains an invalid argument.");
+    });
+
+    it("rethrows THINKING_RECOVERY_NEEDED for outer retry handling", async () => {
+      const response = new Response(
+        JSON.stringify({
+          error: {
+            code: 400,
+            message: "Thinking must start with a thinking block before tool use.",
+            status: "INVALID_ARGUMENT",
+          },
+        }),
+        {
+          status: 400,
+          headers: { "content-type": "application/json" },
+        },
+      );
+
+      await expect(
+        transformAntigravityResponse(
+          response,
+          true,
+          undefined,
+          "antigravity-claude-opus-4-6-thinking",
+          "test-project",
+          "https://daily-cloudcode-pa.sandbox.googleapis.com/v1internal:streamGenerateContent?alt=sse",
+          "claude-opus-4-6-thinking",
+          "session-1",
+        ),
+      ).rejects.toMatchObject({ message: "THINKING_RECOVERY_NEEDED" });
     });
   });
 });

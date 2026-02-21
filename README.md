@@ -1,14 +1,16 @@
 # Antigravity + Gemini CLI OAuth Plugin for Opencode
 
-[![npm version](https://img.shields.io/npm/v/yldst-opencode-antigravity-auth.svg)](https://www.npmjs.com/package/yldst-opencode-antigravity-auth)
-[![npm downloads](https://img.shields.io/npm/dw/yldst-opencode-antigravity-auth.svg)](https://www.npmjs.com/package/yldst-opencode-antigravity-auth)
+[![npm version](https://img.shields.io/npm/v/opencode-antigravity-auth.svg)](https://www.npmjs.com/package/opencode-antigravity-auth)
+[![npm beta](https://img.shields.io/npm/v/opencode-antigravity-auth/beta.svg?label=beta)](https://www.npmjs.com/package/opencode-antigravity-auth)
+[![npm downloads](https://img.shields.io/npm/dw/opencode-antigravity-auth.svg)](https://www.npmjs.com/package/opencode-antigravity-auth)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![X (Twitter)](https://img.shields.io/badge/X-@dopesalmon-000000?style=flat&logo=x)](https://x.com/dopesalmon)
 
 Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth so you can use Antigravity rate limits and access models like `gemini-3-pro` and `claude-opus-4-6-thinking` with your Google credentials.
 
 ## What You Get
 
-- **Claude Opus 4.6, Opus 4.5, Sonnet 4.5** and **Gemini 3 Pro/Flash** via Google OAuth
+- **Claude Opus 4.6, Sonnet 4.6** and **Gemini 3 Pro/Flash** via Google OAuth
 - **Multi-account support** — add multiple Google accounts, auto-rotates when rate-limited
 - **Dual quota system** — access both Antigravity and Gemini CLI quotas from one plugin
 - **Thinking models** — extended thinking for Claude and Gemini 3 with configurable budgets
@@ -49,7 +51,7 @@ Enable Opencode to authenticate against **Antigravity** (Google's IDE) via OAuth
 Paste this into any LLM agent (Claude Code, OpenCode, Cursor, etc.):
 
 ```
-Install the yldst-opencode-antigravity-auth plugin and add the Antigravity model definitions to ~/.config/opencode/opencode.json by following: https://raw.githubusercontent.com/yldst-dev/opencode-antigravity-auth/main/README.md
+Install the opencode-antigravity-auth plugin and add the Antigravity model definitions to ~/.config/opencode/opencode.json by following: https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/dev/README.md
 ```
 
 **Option B: Manual setup**
@@ -58,9 +60,11 @@ Install the yldst-opencode-antigravity-auth plugin and add the Antigravity model
 
    ```json
    {
-     "plugin": ["yldst-opencode-antigravity-auth@latest"]
+     "plugin": ["opencode-antigravity-auth@latest"]
    }
    ```
+
+   > Want bleeding-edge features? Use `opencode-antigravity-auth@beta` instead.
 
 2. **Login** with your Google account:
 
@@ -68,12 +72,14 @@ Install the yldst-opencode-antigravity-auth plugin and add the Antigravity model
    opencode auth login
    ```
 
-3. **Add models** — copy the [full configuration](#models) below
+3. **Add models** — choose one:
+   - Run `opencode auth login` → select **"Configure models in opencode.json"** (auto-configures all models)
+   - Or manually copy the [full configuration](#models) below
 
 4. **Use it:**
 
    ```bash
-   opencode run "Hello" --model=google/antigravity-claude-sonnet-4-5-thinking --variant=max
+   opencode run "Hello" --model=google/antigravity-claude-opus-4-6-thinking --variant=max
    ```
 
 </details>
@@ -96,7 +102,7 @@ Install the yldst-opencode-antigravity-auth plugin and add the Antigravity model
 ### Verification
 
 ```bash
-opencode run "Hello" --model=google/antigravity-claude-sonnet-4-5-thinking --variant=max
+opencode run "Hello" --model=google/antigravity-claude-opus-4-6-thinking --variant=max
 ```
 
 </details>
@@ -107,18 +113,17 @@ opencode run "Hello" --model=google/antigravity-claude-sonnet-4-5-thinking --var
 
 ### Model Reference
 
-**Antigravity quota** (Claude + Gemini 3):
+**Antigravity quota** (default routing for Claude and Gemini):
 
 | Model | Variants | Notes |
 |-------|----------|-------|
 | `antigravity-gemini-3-pro` | low, high | Gemini 3 Pro with thinking |
+| `antigravity-gemini-3.1-pro` | low, high | Gemini 3.1 Pro with thinking (rollout-dependent) |
 | `antigravity-gemini-3-flash` | minimal, low, medium, high | Gemini 3 Flash with thinking |
-| `antigravity-claude-sonnet-4-5` | — | Claude Sonnet 4.5 |
-| `antigravity-claude-sonnet-4-5-thinking` | low, max | Claude Sonnet with extended thinking |
-| `antigravity-claude-opus-4-5-thinking` | low, max | Claude Opus with extended thinking |
-| `antigravity-claude-opus-4-6-thinking` | low, max | Claude Opus with extended thinking |
+| `antigravity-claude-sonnet-4-6` | — | Claude Sonnet 4.6 |
+| `antigravity-claude-opus-4-6-thinking` | low, max | Claude Opus 4.6 with extended thinking |
 
-**Gemini CLI quota** (separate from Antigravity):
+**Gemini CLI quota** (separate from Antigravity; used when `cli_first` is true or as fallback):
 
 | Model | Notes |
 |-------|-------|
@@ -126,10 +131,19 @@ opencode run "Hello" --model=google/antigravity-claude-sonnet-4-5-thinking --var
 | `gemini-2.5-pro` | Gemini 2.5 Pro |
 | `gemini-3-flash-preview` | Gemini 3 Flash (preview) |
 | `gemini-3-pro-preview` | Gemini 3 Pro (preview) |
+| `gemini-3.1-pro-preview` | Gemini 3.1 Pro (preview, rollout-dependent) |
+| `gemini-3.1-pro-preview-customtools` | Gemini 3.1 Pro Preview Custom Tools (preview, rollout-dependent) |
+
+> **Routing Behavior:**
+> - **Antigravity-first (default):** Gemini models use Antigravity quota across accounts.
+> - **CLI-first (`cli_first: true`):** Gemini models use Gemini CLI quota first.
+> - When a Gemini quota pool is exhausted, the plugin automatically falls back to the other pool.
+> - Claude and image models always use Antigravity.
+> Model names are automatically transformed for the target API (e.g., `antigravity-gemini-3-flash` → `gemini-3-flash-preview` for CLI).
 
 **Using variants:**
 ```bash
-opencode run "Hello" --model=google/antigravity-claude-sonnet-4-5-thinking --variant=max
+opencode run "Hello" --model=google/antigravity-claude-opus-4-6-thinking --variant=max
 ```
 
 For details on variant configuration and thinking levels, see [docs/MODEL-VARIANTS.md](docs/MODEL-VARIANTS.md).
@@ -142,12 +156,21 @@ Add this to your `~/.config/opencode/opencode.json`:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["yldst-opencode-antigravity-auth@latest"],
+  "plugin": ["opencode-antigravity-auth@latest"],
   "provider": {
     "google": {
       "models": {
         "antigravity-gemini-3-pro": {
           "name": "Gemini 3 Pro (Antigravity)",
+          "limit": { "context": 1048576, "output": 65535 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
+          "variants": {
+            "low": { "thinkingLevel": "low" },
+            "high": { "thinkingLevel": "high" }
+          }
+        },
+        "antigravity-gemini-3.1-pro": {
+          "name": "Gemini 3.1 Pro (Antigravity)",
           "limit": { "context": 1048576, "output": 65535 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
           "variants": {
@@ -166,28 +189,10 @@ Add this to your `~/.config/opencode/opencode.json`:
             "high": { "thinkingLevel": "high" }
           }
         },
-        "antigravity-claude-sonnet-4-5": {
-          "name": "Claude Sonnet 4.5 (Antigravity)",
+        "antigravity-claude-sonnet-4-6": {
+          "name": "Claude Sonnet 4.6 (Antigravity)",
           "limit": { "context": 200000, "output": 64000 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
-        },
-        "antigravity-claude-sonnet-4-5-thinking": {
-          "name": "Claude Sonnet 4.5 Thinking (Antigravity)",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
-        },
-        "antigravity-claude-opus-4-5-thinking": {
-          "name": "Claude Opus 4.5 Thinking (Antigravity)",
-          "limit": { "context": 200000, "output": 64000 },
-          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] },
-          "variants": {
-            "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
-            "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
-          }
         },
         "antigravity-claude-opus-4-6-thinking": {
           "name": "Claude Opus 4.6 Thinking (Antigravity)",
@@ -217,12 +222,24 @@ Add this to your `~/.config/opencode/opencode.json`:
           "name": "Gemini 3 Pro Preview (Gemini CLI)",
           "limit": { "context": 1048576, "output": 65535 },
           "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "gemini-3.1-pro-preview": {
+          "name": "Gemini 3.1 Pro Preview (Gemini CLI)",
+          "limit": { "context": 1048576, "output": 65535 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
+        },
+        "gemini-3.1-pro-preview-customtools": {
+          "name": "Gemini 3.1 Pro Preview Custom Tools (Gemini CLI)",
+          "limit": { "context": 1048576, "output": 65535 },
+          "modalities": { "input": ["text", "image", "pdf"], "output": ["text"] }
         }
       }
     }
   }
 }
 ```
+
+> **Backward Compatibility:** Legacy model names with `antigravity-` prefix (e.g., `antigravity-gemini-3-flash`) still work. The plugin automatically handles model name transformation for both Antigravity and Gemini CLI APIs.
 
 </details>
 
@@ -237,6 +254,7 @@ opencode auth login  # Run again to add more accounts
 ```
 
 **Account management options (via `opencode auth login`):**
+- **Configure models** — Auto-configure all plugin models in opencode.json
 - **Check quotas** — View remaining API quota for each account
 - **Manage accounts** — Enable/disable specific accounts for rotation
 
@@ -260,6 +278,10 @@ OpenCode uses `~/.config/opencode/` on **all platforms** including Windows.
 | Debug logs | `~/.config/opencode/antigravity-logs/` |
 
 > **Windows users**: `~` resolves to your user home directory (e.g., `C:\Users\YourName`). Do NOT use `%APPDATA%`.
+
+> **Custom path**: Set `OPENCODE_CONFIG_DIR` environment variable to use a custom location.
+
+> **Windows migration**: If upgrading from plugin v1.3.x or earlier, the plugin will automatically find your existing config in `%APPDATA%\opencode\` and use it. New installations use `~/.config/opencode/`.
 
 ---
 
@@ -339,9 +361,9 @@ Invalid JSON payload received. Unknown name "parameters" at 'request.tools[0]'
 - Plugin version regression
 
 **Solutions:**
-1. **Update to latest version:**
+1. **Update to latest beta:**
    ```json
-   { "plugin": ["yldst-opencode-antigravity-auth@latest"] }
+   { "plugin": ["opencode-antigravity-auth@beta"] }
    ```
 
 2. **Disable MCP servers** one-by-one to find the problematic one
@@ -372,7 +394,7 @@ This usually means an MCP tool name starts with a number (for example, a 1mcp ke
 **Diagnosis:**
 1. Disable all MCP servers in your config
 2. Enable one-by-one until error reappears
-3. Report the specific MCP in a [GitHub issue](https://github.com/yldst-dev/opencode-antigravity-auth/issues)
+3. Report the specific MCP in a [GitHub issue](https://github.com/NoeFabris/opencode-antigravity-auth/issues)
 
 ---
 
@@ -500,7 +522,7 @@ The correct key is `plugin` (singular):
 
 ```json
 {
-  "plugin": ["yldst-opencode-antigravity-auth@latest"]
+  "plugin": ["opencode-antigravity-auth@beta"]
 }
 ```
 
@@ -511,7 +533,7 @@ The correct key is `plugin` (singular):
 ### Migrating Accounts Between Machines
 
 When copying `antigravity-accounts.json` to a new machine:
-1. Ensure the plugin is installed: `"plugin": ["yldst-opencode-antigravity-auth@latest"]`
+1. Ensure the plugin is installed: `"plugin": ["opencode-antigravity-auth@beta"]`
 2. Copy `~/.config/opencode/antigravity-accounts.json`
 3. If you get "API key missing" error, the refresh token may be invalid — re-authenticate
 
@@ -529,7 +551,7 @@ DCP creates synthetic assistant messages that lack thinking blocks. **List this 
 ```json
 {
   "plugin": [
-    "yldst-opencode-antigravity-auth@latest",
+    "opencode-antigravity-auth@latest",
     "@tarquinen/opencode-dcp@latest"
   ]
 }
@@ -564,7 +586,7 @@ Create `~/.config/opencode/antigravity.json` for optional settings:
 
 ```json
 {
-  "$schema": "https://raw.githubusercontent.com/yldst-dev/opencode-antigravity-auth/main/assets/antigravity.schema.json"
+  "$schema": "https://raw.githubusercontent.com/NoeFabris/opencode-antigravity-auth/main/assets/antigravity.schema.json"
 }
 ```
 
@@ -576,7 +598,7 @@ Most users don't need to configure anything — defaults work well.
 |--------|---------|--------------
 | `keep_thinking` | `false` | Preserve Claude's thinking across turns. **Warning:** enabling may degrade model stability. |
 | `session_recovery` | `true` | Auto-recover from tool errors |
-| `web_search.default_mode` | `"off"` | Gemini Google Search: `"auto"` or `"off"` |
+| `cli_first` | `false` | Route Gemini models to Gemini CLI first (Claude and image models stay on Antigravity). |
 
 ### Account Rotation
 
@@ -586,6 +608,16 @@ Most users don't need to configure anything — defaults work well.
 | **2-5 accounts** | Default (`"hybrid"`) works great |
 | **5+ accounts** | `"account_selection_strategy": "round-robin"` |
 | **Parallel agents** | Add `"pid_offset_enabled": true` |
+
+### Quota Protection
+
+| Option | Default | What it does |
+|--------|---------|--------------|
+| `soft_quota_threshold_percent` | `90` | Skip account when quota usage exceeds this percentage. Prevents Google from penalizing accounts that fully exhaust quota. Set to `100` to disable. |
+| `quota_refresh_interval_minutes` | `15` | Background quota refresh interval. After successful API requests, refreshes quota cache if older than this interval. Set to `0` to disable. |
+| `soft_quota_cache_ttl_minutes` | `"auto"` | How long quota cache is considered fresh. `"auto"` = max(2 × refresh interval, 10 minutes). Set a number (1-120) for fixed TTL. |
+
+> **How it works**: Quota cache is refreshed automatically after API requests (when older than `quota_refresh_interval_minutes`) and manually via "Check quotas" in `opencode auth login`. The threshold check uses `soft_quota_cache_ttl_minutes` to determine cache freshness - if cache is older, the account is considered "unknown" and allowed (fail-open). When ALL accounts exceed the threshold, the plugin waits for the earliest quota reset time (like rate limit behavior). If wait time exceeds `max_rate_limit_wait_seconds`, it errors immediately.
 
 ### Rate Limit Scheduling
 
@@ -602,55 +634,23 @@ Control how the plugin handles rate limits:
 - **balance**: Best for quick tasks. Switches accounts immediately when rate-limited for maximum availability.
 - **performance_first**: Best for many short requests. Distributes load evenly across all accounts.
 
-### Quota Guard (Proactive Account Switching)
-
-Automatically switches accounts **before** quota is exhausted to prevent 429 errors and avoid the 2-day wait penalty when quota hits 0%.
-
-```json
-{
-  "quota_guard": {
-    "enabled": true,
-    "switchRemainingPercent": 5,
-    "cooldownMinutes": 300,
-    "waitWhenNoAccount": true,
-    "waitPollSeconds": 30,
-    "maxWaitSeconds": 0
-  }
-}
-```
-
-| Option | Default | What it does |
-|--------|---------|--------------|
-| `enabled` | `true` | Enable proactive quota checking |
-| `switchRemainingPercent` | `5` | Switch when any quota group drops to this % |
-| `cooldownMinutes` | `300` | Cooldown duration for exhausted accounts (5 hours) |
-| `waitWhenNoAccount` | `true` | Wait for cooldown to expire (vs. error immediately) |
-| `waitPollSeconds` | `30` | Polling interval during wait |
-| `maxWaitSeconds` | `0` | Max wait time; 0 = wait indefinitely |
-| `quotaCacheTtlSeconds` | `60` | Cache quota results for this duration |
-
-**How it works:**
-1. Before each request, checks current account's quota (cached for 60s)
-2. If any quota group is at or below threshold (5%), marks account for cooldown and switches
-3. If no accounts available, waits and polls until one recovers
-4. Respects `maxWaitSeconds` timeout if set
-
-> **Important:** If quota hits 0%, there's a 2-day wait penalty. Quota Guard prevents this by switching at 5% remaining.
-
 ### App Behavior
 
 | Option | Default | What it does |
 |--------|---------|--------------|
 | `quiet_mode` | `false` | Hide toast notifications |
-| `debug` | `false` | Enable debug logging |
+| `debug` | `false` | Enable debug file logging (`~/.config/opencode/antigravity-logs/`) |
+| `debug_tui` | `false` | Show debug logs in the TUI log panel (independent from `debug`) |
 | `auto_update` | `true` | Auto-update plugin |
 
 For all options, see [docs/CONFIGURATION.md](docs/CONFIGURATION.md).
 
 **Environment variables:**
 ```bash
-OPENCODE_ANTIGRAVITY_DEBUG=1 opencode   # Enable debug logging
-OPENCODE_ANTIGRAVITY_DEBUG=2 opencode   # Verbose logging
+OPENCODE_CONFIG_DIR=/path/to/config opencode  # Custom config directory
+OPENCODE_ANTIGRAVITY_DEBUG=1 opencode         # Enable debug file logging
+OPENCODE_ANTIGRAVITY_DEBUG=2 opencode         # Verbose debug file logging
+OPENCODE_ANTIGRAVITY_DEBUG_TUI=1 opencode     # Enable TUI log panel debug output
 ```
 
 ---

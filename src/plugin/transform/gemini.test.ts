@@ -74,6 +74,10 @@ describe("transform/gemini", () => {
       expect(isGemini3Model("gemini-3-flash")).toBe(true);
     });
 
+    it("returns true for gemini-3.1-pro", () => {
+      expect(isGemini3Model("gemini-3.1-pro")).toBe(true);
+    });
+
     it("returns true for uppercase GEMINI-3-PRO", () => {
       expect(isGemini3Model("GEMINI-3-PRO")).toBe(true);
     });
@@ -608,8 +612,8 @@ describe("transform/gemini", () => {
       expect(isImageGenerationModel("gemini-2.5-flash")).toBe(false);
     });
 
-    it("returns false for claude-sonnet-4-5", () => {
-      expect(isImageGenerationModel("claude-sonnet-4-5")).toBe(false);
+    it("returns false for claude-sonnet-4-6", () => {
+      expect(isImageGenerationModel("claude-sonnet-4-6")).toBe(false);
     });
   });
 

@@ -1,8 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { AccountManager, type ModelFamily, type HeaderStyle, parseRateLimitReason, calculateBackoffMs, type RateLimitReason } from "./accounts";
-import type { AccountStorageV3 } from "./storage";
+import { AccountManager, type ModelFamily, type HeaderStyle, parseRateLimitReason, calculateBackoffMs, type RateLimitReason, resolveQuotaGroup } from "./accounts";
+import type { AccountStorageV4 } from "./storage";
 import type { OAuthAuthDetails } from "./types";
+
+// Mock storage to prevent test data from leaking to real config files
+vi.mock("./storage", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./storage")>();
+  return {
+    ...original,
+    saveAccounts: vi.fn().mockResolvedValue(undefined),
+    saveAccountsReplace: vi.fn().mockResolvedValue(undefined),
+  };
+});
 
 describe("AccountManager", () => {
   beforeEach(() => {
@@ -18,8 +28,8 @@ describe("AccountManager", () => {
       expires: 123,
     };
 
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [],
       activeIndex: 0,
     };
@@ -29,8 +39,8 @@ describe("AccountManager", () => {
   });
 
   it("returns current account when not rate-limited for family", () => {
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -48,8 +58,8 @@ describe("AccountManager", () => {
   });
 
   it("switches to next account when current is rate-limited for family", () => {
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -68,8 +78,8 @@ describe("AccountManager", () => {
   });
 
   it("returns null when all accounts are rate-limited for family", () => {
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -91,8 +101,8 @@ describe("AccountManager", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
 
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
       ],
@@ -113,8 +123,8 @@ describe("AccountManager", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
 
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -133,8 +143,8 @@ describe("AccountManager", () => {
   });
 
   it("tracks rate limits per model family independently", () => {
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
       ],
@@ -162,8 +172,8 @@ describe("AccountManager", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
 
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -196,8 +206,8 @@ describe("AccountManager", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
 
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -227,8 +237,8 @@ describe("AccountManager", () => {
       expires: 123,
     };
 
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -249,8 +259,8 @@ describe("AccountManager", () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date(0));
 
-    const stored: AccountStorageV3 = {
-      version: 3,
+    const stored: AccountStorageV4 = {
+      version: 4,
       accounts: [
         { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
       ],
@@ -272,8 +282,8 @@ describe("AccountManager", () => {
 
   describe("header style fallback for Gemini", () => {
     it("tracks rate limits separately for each header style", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -290,8 +300,8 @@ describe("AccountManager", () => {
     });
 
     it("getAvailableHeaderStyle returns antigravity first for Gemini", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -305,8 +315,8 @@ describe("AccountManager", () => {
     });
 
     it("getAvailableHeaderStyle returns gemini-cli when antigravity is rate-limited", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -322,8 +332,8 @@ describe("AccountManager", () => {
     });
 
     it("getAvailableHeaderStyle returns null when both header styles are rate-limited", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -340,8 +350,8 @@ describe("AccountManager", () => {
     });
 
     it("getAvailableHeaderStyle always returns antigravity for Claude", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -355,8 +365,8 @@ describe("AccountManager", () => {
     });
 
     it("getAvailableHeaderStyle returns null for Claude when rate-limited", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -375,8 +385,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(0));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -401,8 +411,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(0));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -424,8 +434,8 @@ describe("AccountManager", () => {
 
   describe("per-family account tracking", () => {
     it("tracks current account independently per model family", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -448,8 +458,8 @@ describe("AccountManager", () => {
     });
 
     it("switching Claude account does not affect Gemini account selection", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -476,8 +486,8 @@ describe("AccountManager", () => {
     });
 
     it("persists per-family indices to storage", async () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -496,8 +506,8 @@ describe("AccountManager", () => {
     });
 
     it("loads per-family indices from storage", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -517,8 +527,8 @@ describe("AccountManager", () => {
     });
 
     it("falls back to activeIndex when activeIndexByFamily is not present", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -535,8 +545,8 @@ describe("AccountManager", () => {
 
   describe("account cooldown (non-429 errors)", () => {
     it("marks account as cooling down with reason", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -555,8 +565,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(0));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -576,8 +586,8 @@ describe("AccountManager", () => {
     });
 
     it("clearAccountCooldown removes cooldown state", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -595,8 +605,8 @@ describe("AccountManager", () => {
     });
 
     it("cooling down account is skipped in getCurrentOrNextForFamily", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -614,8 +624,8 @@ describe("AccountManager", () => {
     });
 
     it("cooldown is independent from rate limits", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -636,8 +646,8 @@ describe("AccountManager", () => {
   describe("account selection strategies", () => {
     describe("sticky strategy (default)", () => {
       it("returns same account on consecutive calls", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -657,8 +667,8 @@ describe("AccountManager", () => {
       });
 
       it("switches account only when current is rate-limited", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -680,8 +690,8 @@ describe("AccountManager", () => {
 
     describe("round-robin strategy", () => {
       it("rotates to next account on each call", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -702,8 +712,8 @@ describe("AccountManager", () => {
       });
 
       it("skips rate-limited accounts", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -726,8 +736,8 @@ describe("AccountManager", () => {
 
     describe("hybrid strategy", () => {
       it("returns fresh (untouched) accounts first", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -749,8 +759,8 @@ describe("AccountManager", () => {
       });
 
       it("continues to return valid accounts after all touched", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -775,8 +785,8 @@ describe("AccountManager", () => {
 
     describe("hybrid strategy with token bucket", () => {
       it("returns account based on health and token availability", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -793,8 +803,8 @@ describe("AccountManager", () => {
       });
 
       it("skips rate-limited accounts", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -811,8 +821,8 @@ describe("AccountManager", () => {
       });
 
       it("skips cooling down accounts", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -832,8 +842,8 @@ describe("AccountManager", () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date(0));
 
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           ],
@@ -850,8 +860,8 @@ describe("AccountManager", () => {
         vi.useFakeTimers();
         vi.setSystemTime(new Date(5000));
 
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
             { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -874,8 +884,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(1000));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -891,8 +901,8 @@ describe("AccountManager", () => {
     });
 
     it("isFreshForQuota returns true for untouched accounts", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -909,8 +919,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(1000));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -929,8 +939,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(1000));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -952,8 +962,8 @@ describe("AccountManager", () => {
 
   describe("consecutiveFailures tracking", () => {
     it("initializes consecutiveFailures as undefined", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -967,8 +977,8 @@ describe("AccountManager", () => {
     });
 
     it("can increment and reset consecutiveFailures", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -991,8 +1001,8 @@ describe("AccountManager", () => {
 
   describe("Issue #147: headerStyle-aware account selection", () => {
     it("skips account when requested headerStyle is rate-limited even if other style is available", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -1027,8 +1037,8 @@ describe("AccountManager", () => {
     });
 
     it("returns same account when a different headerStyle is rate-limited", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           { refreshToken: "r2", projectId: "p2", addedAt: 1, lastUsed: 0 },
@@ -1060,8 +1070,8 @@ describe("AccountManager", () => {
     it("requestSaveToDisk coalesces multiple calls into one write", async () => {
       vi.useFakeTimers();
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1087,8 +1097,8 @@ describe("AccountManager", () => {
     it("flushSaveToDisk waits for pending save to complete", async () => {
       vi.useFakeTimers();
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1113,8 +1123,8 @@ describe("AccountManager", () => {
     it("does not save again if no new requestSaveToDisk after flush", async () => {
       vi.useFakeTimers();
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1142,8 +1152,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(0));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1238,8 +1248,8 @@ describe("AccountManager", () => {
         vi.useFakeTimers();
         vi.setSystemTime(1000);
 
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           ],
@@ -1274,8 +1284,8 @@ describe("AccountManager", () => {
         vi.useFakeTimers();
         vi.setSystemTime(1000);
 
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           ],
@@ -1296,8 +1306,8 @@ describe("AccountManager", () => {
 
     describe("markRequestSuccess", () => {
       it("resets consecutive failure counter", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           ],
@@ -1318,8 +1328,8 @@ describe("AccountManager", () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
 
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0, rateLimitResetTimes: { "gemini-antigravity": 11_500, "gemini-cli": 11_500 } },
           ],
@@ -1336,8 +1346,8 @@ describe("AccountManager", () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
 
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0, rateLimitResetTimes: { "gemini-antigravity": 15_000, "gemini-cli": 15_000 } },
           ],
@@ -1351,8 +1361,8 @@ describe("AccountManager", () => {
       });
 
       it("shouldTryOptimisticReset returns false when accounts are available", () => {
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
           ],
@@ -1367,8 +1377,8 @@ describe("AccountManager", () => {
         vi.useFakeTimers();
         vi.setSystemTime(10_000);
 
-        const stored: AccountStorageV3 = {
-          version: 3,
+        const stored: AccountStorageV4 = {
+          version: 4,
           accounts: [
             { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0, rateLimitResetTimes: { "gemini-antigravity": 70_000, "gemini-cli": 80_000 } },
             { refreshToken: "r2", projectId: "p2", addedAt: 2, lastUsed: 0, rateLimitResetTimes: { "gemini-antigravity": 90_000 } },
@@ -1399,8 +1409,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(0));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1429,8 +1439,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(0));
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1457,8 +1467,8 @@ describe("AccountManager", () => {
 
   describe("Fingerprint History", () => {
     it("regenerateAccountFingerprint saves old fingerprint to history", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1483,8 +1493,8 @@ describe("AccountManager", () => {
       vi.useFakeTimers();
       vi.setSystemTime(new Date(1000)); // Start at 1000 to avoid 0 being falsy
 
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1523,8 +1533,8 @@ describe("AccountManager", () => {
     });
 
     it("getAccountFingerprintHistory returns empty array for new account", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1538,8 +1548,8 @@ describe("AccountManager", () => {
     });
 
     it("limits fingerprint history to MAX_FINGERPRINT_HISTORY", () => {
-      const stored: AccountStorageV3 = {
-        version: 3,
+      const stored: AccountStorageV4 = {
+        version: 4,
         accounts: [
           { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
         ],
@@ -1556,5 +1566,303 @@ describe("AccountManager", () => {
       const history = manager.getAccountFingerprintHistory(0);
       expect(history.length).toBeLessThanOrEqual(5);
     });
+  });
+
+  describe("soft quota threshold", () => {
+    it("skips account over soft quota threshold in sticky mode", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          { refreshToken: "r2", projectId: "p2", addedAt: 2, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0.05, modelCount: 1 } });
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r2");
+    });
+
+    it("allows account under soft quota threshold", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0.15, modelCount: 1 } });
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r1");
+    });
+
+    it("threshold of 100 disables soft quota protection", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0.01, modelCount: 1 } });
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 100);
+      expect(account?.parts.refreshToken).toBe("r1");
+    });
+
+    it("returns null when all accounts over threshold", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          { refreshToken: "r2", projectId: "p2", addedAt: 2, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0.05, modelCount: 1 } });
+      manager.updateQuotaCache(1, { claude: { remainingFraction: 0.08, modelCount: 1 } });
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account).toBeNull();
+    });
+
+    it("skips account over threshold in round-robin mode", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          { refreshToken: "r2", projectId: "p2", addedAt: 2, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0.05, modelCount: 1 } });
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "round-robin", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r2");
+    });
+
+    it("account without cached quota is not skipped", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r1");
+    });
+
+    it("handles remainingFraction of 0 (fully exhausted)", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          { refreshToken: "r2", projectId: "p2", addedAt: 2, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0, modelCount: 1 } });
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r2");
+    });
+
+    it("ignores stale quota cache (over 10 minutes old)", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(0));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0.05, modelCount: 1 } });
+
+      vi.setSystemTime(new Date(11 * 60 * 1000));
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r1");
+
+      vi.useRealTimers();
+    });
+
+    it("fails open when cachedQuotaUpdatedAt is missing", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      const acc = (manager as any).accounts[0];
+      acc.cachedQuota = { claude: { remainingFraction: 0.05, modelCount: 1 } };
+      acc.cachedQuotaUpdatedAt = undefined;
+
+      const account = manager.getCurrentOrNextForFamily("claude", null, "sticky", "antigravity", false, 90);
+      expect(account?.parts.refreshToken).toBe("r1");
+    });
+  });
+
+  describe("getMinWaitTimeForSoftQuota", () => {
+    it("returns 0 when accounts are available (under threshold)", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0.15, modelCount: 1 } });
+
+      const waitMs = manager.getMinWaitTimeForSoftQuota("claude", 90, 10 * 60 * 1000);
+      expect(waitMs).toBe(0);
+    });
+
+    it("returns null when no resetTime available", () => {
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { claude: { remainingFraction: 0.05, modelCount: 1 } });
+
+      const waitMs = manager.getMinWaitTimeForSoftQuota("claude", 90, 10 * 60 * 1000);
+      expect(waitMs).toBeNull();
+    });
+
+    it("returns wait time from resetTime when over threshold", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { 
+        claude: { 
+          remainingFraction: 0.05, 
+          resetTime: "2026-01-28T15:00:00Z",
+          modelCount: 1 
+        } 
+      });
+
+      const waitMs = manager.getMinWaitTimeForSoftQuota("claude", 90, 10 * 60 * 1000);
+      expect(waitMs).toBe(5 * 60 * 60 * 1000);
+
+      vi.useRealTimers();
+    });
+
+    it("returns null (fail-open) when resetTime is in the past", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T16:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { 
+        claude: { 
+          remainingFraction: 0.05, 
+          resetTime: "2026-01-28T15:00:00Z",
+          modelCount: 1 
+        } 
+      });
+
+      const waitMs = manager.getMinWaitTimeForSoftQuota("claude", 90, 10 * 60 * 1000);
+      expect(waitMs).toBe(null);
+
+      vi.useRealTimers();
+    });
+
+    it("returns minimum wait time across multiple accounts", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-01-28T10:00:00Z"));
+
+      const stored: AccountStorageV4 = {
+        version: 4,
+        accounts: [
+          { refreshToken: "r1", projectId: "p1", addedAt: 1, lastUsed: 0 },
+          { refreshToken: "r2", projectId: "p2", addedAt: 2, lastUsed: 0 },
+        ],
+        activeIndex: 0,
+      };
+
+      const manager = new AccountManager(undefined, stored);
+      manager.updateQuotaCache(0, { 
+        claude: { remainingFraction: 0.05, resetTime: "2026-01-28T15:00:00Z", modelCount: 1 } 
+      });
+      manager.updateQuotaCache(1, { 
+        claude: { remainingFraction: 0.08, resetTime: "2026-01-28T12:00:00Z", modelCount: 1 } 
+      });
+
+      const waitMs = manager.getMinWaitTimeForSoftQuota("claude", 90, 10 * 60 * 1000);
+      expect(waitMs).toBe(2 * 60 * 60 * 1000);
+
+      vi.useRealTimers();
+    });
+  });
+});
+
+describe("resolveQuotaGroup", () => {
+  it("returns model-based quota group when model is provided", () => {
+    expect(resolveQuotaGroup("claude", "claude-opus-4-6-thinking")).toBe("claude");
+    expect(resolveQuotaGroup("gemini", "gemini-2.5-pro")).toBe("gemini-pro");
+    expect(resolveQuotaGroup("gemini", "gemini-2.5-flash")).toBe("gemini-flash");
+  });
+
+  it("falls back to claude for claude family when no model", () => {
+    expect(resolveQuotaGroup("claude", null)).toBe("claude");
+    expect(resolveQuotaGroup("claude", undefined)).toBe("claude");
+  });
+
+  it("falls back to gemini-pro for gemini family when no model", () => {
+    expect(resolveQuotaGroup("gemini", null)).toBe("gemini-pro");
+    expect(resolveQuotaGroup("gemini", undefined)).toBe("gemini-pro");
+  });
+
+  it("model takes precedence over family", () => {
+    // Even if family says claude, model determines the quota group
+    expect(resolveQuotaGroup("gemini", "gemini-2.5-flash")).toBe("gemini-flash");
+    expect(resolveQuotaGroup("gemini", "gemini-3-pro")).toBe("gemini-pro");
   });
 });

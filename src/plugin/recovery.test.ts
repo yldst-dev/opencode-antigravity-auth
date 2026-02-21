@@ -74,6 +74,14 @@ describe("detectErrorType", () => {
       const error = { message: "Rate limit exceeded. Retry after 5s" };
       expect(detectErrorType(error)).toBeNull();
     });
+
+    it("returns null for generic INVALID_ARGUMENT with debug expected/found metadata", () => {
+      const error = {
+        message:
+          "Request contains an invalid argument. [Debug Info] Requested Model: antigravity-claude-opus-4-6-thinking Tool Debug Summary: expected=1 found=0",
+      };
+      expect(detectErrorType(error)).toBeNull();
+    });
   });
 });
 

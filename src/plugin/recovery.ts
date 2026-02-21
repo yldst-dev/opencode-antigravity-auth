@@ -11,6 +11,7 @@
 
 import type { AntigravityConfig } from "./config";
 import { createLogger } from "./logger";
+import { logToast } from "./debug";
 import type { PluginClient } from "./types";
 import {
   readParts,
@@ -84,6 +85,9 @@ function extractMessageIndex(error: unknown): number | null {
  */
 export function detectErrorType(error: unknown): RecoveryErrorType {
   const message = getErrorMessage(error);
+  const hasExpectedFoundThinkingOrder =
+    (message.includes("expected thinking") || message.includes("expected a thinking")) &&
+    message.includes("found");
 
   // tool_result_missing: Happens when ESC is pressed during tool execution
   if (message.includes("tool_use") && message.includes("tool_result")) {
@@ -96,7 +100,8 @@ export function detectErrorType(error: unknown): RecoveryErrorType {
     (message.includes("first block") ||
       message.includes("must start with") ||
       message.includes("preceeding") ||
-      (message.includes("expected") && message.includes("found")))
+      message.includes("preceding") ||
+      hasExpectedFoundThinkingOrder)
   ) {
     return "thinking_block_order";
   }
@@ -458,6 +463,7 @@ export function createSessionRecoveryHook(
 
       // Show toast notification
       const toastContent = getRecoveryToastContent(errorType);
+      logToast(`${toastContent.title}: ${toastContent.message}`, "warning");
       await client.tui
         .showToast({
           body: {

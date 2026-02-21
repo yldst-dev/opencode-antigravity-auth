@@ -84,6 +84,39 @@ The correct key is `plugin` (singular):
 
 **Not** `"plugins"` (will cause "Unrecognized key" error).
 
+### "Invalid SemVer: beta"
+
+**Error:**
+```
+Invalid SemVer
+{
+  "name": "UnknownError",
+  "data": {
+    "message": "Error: Invalid SemVer: beta ... isOutdated (src/bun/registry.ts:...)"
+  }
+}
+```
+
+**Why this happens:** OpenCode's cache may keep the plugin dependency as a dist-tag (`"beta"`) in `~/.cache/opencode/package.json` and `~/.cache/opencode/bun.lock`. Some OpenCode versions compare plugin versions as strict semver and fail on non-numeric tags.
+
+**Fix (recommended):** Re-resolve the dependency in OpenCode cache so it is pinned to a real version.
+
+**macOS / Linux:**
+```bash
+cd ~/.cache/opencode
+bun add opencode-antigravity-auth@latest
+```
+
+**Windows (PowerShell):**
+```powershell
+Set-Location "$env:USERPROFILE\.cache\opencode"
+bun add opencode-antigravity-auth@latest
+```
+
+Then restart OpenCode.
+
+> If you intentionally run beta channel, use `bun add opencode-antigravity-auth@beta` instead.
+
 ---
 
 ## Gemini CLI Permission Error
@@ -373,15 +406,15 @@ v1.2.8+ introduces **model variants** for dynamic thinking configuration.
 **Before (v1.2.7):**
 ```json
 {
-  "antigravity-claude-sonnet-4-5-thinking-low": { ... },
-  "antigravity-claude-sonnet-4-5-thinking-max": { ... }
+  "antigravity-claude-opus-4-6-thinking-low": { ... },
+  "antigravity-claude-opus-4-6-thinking-max": { ... }
 }
 ```
 
 **After (v1.2.8+):**
 ```json
 {
-  "antigravity-claude-sonnet-4-5-thinking": {
+  "antigravity-claude-opus-4-6-thinking": {
     "variants": {
       "low": { "thinkingConfig": { "thinkingBudget": 8192 } },
       "max": { "thinkingConfig": { "thinkingBudget": 32768 } }
@@ -390,7 +423,7 @@ v1.2.8+ introduces **model variants** for dynamic thinking configuration.
 }
 ```
 
-Old tier-suffixed models still work for backward compatibility.
+Use canonical model names from current docs. Deprecated model names are sent as requested and may fail if the upstream API has removed them.
 
 ### v1.2.7 (Prefix)
 
@@ -399,18 +432,20 @@ v1.2.7+ uses explicit `antigravity-` prefix:
 | Old Name | New Name |
 |----------|----------|
 | `gemini-3-pro-low` | `antigravity-gemini-3-pro` |
-| `claude-sonnet-4-5` | `antigravity-claude-sonnet-4-5` |
+| `claude-sonnet-4-6` | `antigravity-claude-sonnet-4-6` |
 
-Old names work as fallback, but `antigravity-` prefix is recommended.
+Use the `antigravity-` prefixed model names shown above.
 
 ---
 
 ## Debugging
 
 Enable debug logging:
-```bash
-OPENCODE_ANTIGRAVITY_DEBUG=1 opencode   # Basic
-OPENCODE_ANTIGRAVITY_DEBUG=2 opencode   # Verbose (full request/response)
+```json
+{
+  "debug": true,
+  "debug_tui": true
+}
 ```
 
 Logs are in `~/.config/opencode/antigravity-logs/`.
