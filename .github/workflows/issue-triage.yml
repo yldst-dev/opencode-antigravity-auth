@@ -1,13 +1,6 @@
 name: '🏷️ Issue Triage'
 
 on:
-  issues:
-    types:
-      - 'opened'
-      - 'reopened'
-  issue_comment:
-    types:
-      - 'created'
   workflow_dispatch:
     inputs:
       issue_number:
@@ -25,18 +18,7 @@ permissions:
 
 jobs:
   triage-issue:
-    if: |
-      github.event_name == 'workflow_dispatch' ||
-      github.event_name == 'issues' ||
-      (
-        github.event_name == 'issue_comment' &&
-        contains(github.event.comment.body, '/triage') &&
-        (
-          github.event.comment.author_association == 'OWNER' ||
-          github.event.comment.author_association == 'MEMBER' ||
-          github.event.comment.author_association == 'COLLABORATOR'
-        )
-      )
+    if: github.event_name == 'workflow_dispatch'
     timeout-minutes: 30
     runs-on: self-hosted
 
@@ -44,7 +26,7 @@ jobs:
       - name: 'Check if already triaged'
         id: 'check_labels'
         if: github.event_name != 'workflow_dispatch'
-        uses: 'actions/github-script@v7'
+        uses: 'actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b'
         with:
           script: |
             const labels = context.payload.issue?.labels?.map(l => l.name) || [];
@@ -63,7 +45,7 @@ jobs:
       - name: 'Get issue data'
         id: 'get_issue'
         if: steps.check_labels.outputs.skip != 'true'
-        uses: 'actions/github-script@v7'
+        uses: 'actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b'
         with:
           script: |
             const issueNumber = context.payload.inputs?.issue_number || context.issue?.number;
@@ -89,7 +71,7 @@ jobs:
 
       - name: 'Apply Labels and Respond'
         if: steps.check_labels.outputs.skip != 'true'
-        uses: 'actions/github-script@v7'
+        uses: 'actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b'
         env:
           ISSUE_NUMBER: '${{ steps.get_issue.outputs.number }}'
           OPENCODE_OUTPUT: '${{ steps.opencode_triage.outputs.result }}'
@@ -265,7 +247,7 @@ jobs:
 
       - name: 'Comment on failure'
         if: failure()
-        uses: 'actions/github-script@v7'
+        uses: 'actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b'
         env:
           ISSUE_NUMBER: '${{ steps.get_issue.outputs.number || github.event.issue.number }}'
           RUN_URL: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
