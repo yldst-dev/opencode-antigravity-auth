@@ -20,14 +20,17 @@ permissions:
 jobs:
   republish:
     runs-on: ubuntu-latest
+    env:
+      REQUESTED_VERSION: ${{ github.event.inputs.version }}
+      SKIP_UNPUBLISH: ${{ github.event.inputs.skip_unpublish }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
           fetch-depth: 0
 
       - name: Use Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: 20
           registry-url: https://registry.npmjs.org
@@ -36,7 +39,6 @@ jobs:
       - name: Verify version matches package.json
         run: |
           set -euo pipefail
-          REQUESTED_VERSION="${{ github.event.inputs.version }}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
 
           if [ "$REQUESTED_VERSION" != "$PACKAGE_VERSION" ]; then
@@ -48,27 +50,24 @@ jobs:
           echo "Version verified: $PACKAGE_VERSION"
 
       - name: Unpublish existing version
-        if: github.event.inputs.skip_unpublish != 'true'
+        if: env.SKIP_UNPUBLISH != 'true'
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
-
-          echo "Checking if version $VERSION exists on npm..."
-          if npm view opencode-antigravity-auth@$VERSION version >/dev/null 2>&1; then
-            echo "Version $VERSION exists, unpublishing..."
-            npm unpublish opencode-antigravity-auth@$VERSION --force
-            echo "Successfully unpublished version $VERSION"
+          echo "Checking if version $REQUESTED_VERSION exists on npm..."
+          if npm view opencode-antigravity-auth@$REQUESTED_VERSION version >/dev/null 2>&1; then
+            echo "Version $REQUESTED_VERSION exists, unpublishing..."
+            npm unpublish opencode-antigravity-auth@$REQUESTED_VERSION --force
+            echo "Successfully unpublished version $REQUESTED_VERSION"
           else
-            echo "Version $VERSION does not exist on npm, skipping unpublish"
+            echo "Version $REQUESTED_VERSION does not exist on npm, skipping unpublish"
           fi
 
       - name: Delete existing git tag
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
-          TAG="v$VERSION"
+          TAG="v$REQUESTED_VERSION"
 
           echo "Checking if tag $TAG exists..."
           if git tag -l "$TAG" | grep -q "$TAG"; then
@@ -116,15 +115,13 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
-
-          echo "Publishing version $VERSION to npm..."
+          echo "Publishing version $REQUESTED_VERSION to npm..."
           npm publish --access public --provenance
 
-          echo "Successfully published version $VERSION"
+          echo "Successfully published version $REQUESTED_VERSION"
           echo ""
           echo "Updating @latest tag..."
-          npm dist-tag add opencode-antigravity-auth@$VERSION latest
+          npm dist-tag add opencode-antigravity-auth@$REQUESTED_VERSION latest
 
           echo ""
           echo "Current dist-tags:"
@@ -132,34 +129,31 @@ jobs:
 
       - name: Create git tag
         run: |
-          VERSION="${{ github.event.inputs.version }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "v$VERSION"
-          git push origin "v$VERSION"
+          git tag "v$REQUESTED_VERSION"
+          git push origin "v$REQUESTED_VERSION"
 
       - name: Generate release notes
         id: release_notes
         run: |
           set -euo pipefail
-          VERSION="${{ github.event.inputs.version }}"
-
           LAST_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -n "$LAST_TAG" ]; then
             CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' "${LAST_TAG}..HEAD" | grep -v "\[skip ci\]" || echo "")
-            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${VERSION}"
+            COMPARE_URL="https://github.com/${GITHUB_REPOSITORY}/compare/${LAST_TAG}...v${REQUESTED_VERSION}"
           else
             CHANGELOG=$(git log --no-merges --pretty=format:'- %s (%h)' -20 | grep -v "\[skip ci\]" || echo "")
             COMPARE_URL=""
           fi
 
           if [ -z "$CHANGELOG" ]; then
-            CHANGELOG="- Release v${VERSION}"
+            CHANGELOG="- Release v${REQUESTED_VERSION}"
           fi
 
           BODY_FILE=$(mktemp)
           {
-            echo "## Release v${VERSION}"
+            echo "## Release v${REQUESTED_VERSION}"
             echo ""
             if [ -n "$COMPARE_URL" ]; then
               echo "Compare changes: $COMPARE_URL"
@@ -173,7 +167,7 @@ jobs:
             echo ""
             printf '%s\n' '```json'
             printf '%s\n' '{'
-            printf '%s\n' "  \"plugins\": [\"opencode-antigravity-auth@${VERSION}\"]"
+            printf '%s\n' "  \"plugins\": [\"opencode-antigravity-auth@${REQUESTED_VERSION}\"]"
             printf '%s\n' '}'
             printf '%s\n' '```'
           } >"$BODY_FILE"
@@ -185,7 +179,7 @@ jobs:
           } >>"$GITHUB_OUTPUT"
 
       - name: Create GitHub release
-        uses: actions/create-release@v1
+        uses: actions/create-release@0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
@@ -199,11 +193,11 @@ jobs:
         run: |
           echo "## Version Republished! 🚀" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Version:** ${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** $REQUESTED_VERSION" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Install:**" >> $GITHUB_STEP_SUMMARY
           echo '```bash' >> $GITHUB_STEP_SUMMARY
-          echo "npm install opencode-antigravity-auth@${{ github.event.inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "npm install opencode-antigravity-auth@$REQUESTED_VERSION" >> $GITHUB_STEP_SUMMARY
           echo "# or" >> $GITHUB_STEP_SUMMARY
           echo "npm install opencode-antigravity-auth@latest" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
